@@ -1,18 +1,38 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Phishing Detector</title>
+  <title>Phishing Detector</title>
+  <style>
+    body {
+      font-family: Arial;
+      width: 250px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    button {
+      padding: 8px;
+      margin-top: 10px;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .safe { color: green; }
+    .phishing { color: red; }
+    .unknown { color: orange; }
+  </style>
 </head>
 
 <body>
 
-<h3>Phishing Detector</h3>
+  <h3>URL Check</h3>
 
-<button id="scanBtn">Scan Page</button>
+  <button id="checkBtn">Analyse Site</button>
 
-<div id="result"></div>
+  <p id="result"></p>
+  <ul id="reasons"></ul>
 
-<script src="popup.js"></script>
+  <script src="popup.js"></script>
 
 </body>
 </html>

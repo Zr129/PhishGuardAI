@@ -1,37 +1,22 @@
 from utils.url_features import extract_url_features
 
-def analyse_url(url):
+def load_blacklist():
+    with open("blacklist.txt", "r") as f:
+        return [line.strip() for line in f.readlines()]
 
-    features = extract_url_features(url)
+BLACKLIST = load_blacklist()
 
-    score = 0
-    reasons = []
-
-    if features["length"] > 75:
-        score += 1
-        reasons.append("URL unusually long")
-
-    if features["num_dots"] > 3:
-        score += 1
-        reasons.append("Many subdomains detected")
-
-    if features["has_ip"]:
-        score += 2
-        reasons.append("IP address used in URL")
-
-    if features["suspicious_keywords"]:
-        score += 1
-        reasons.append("Suspicious keyword in URL")
-
-    if score >= 3:
-        classification = "phishing"
-    elif score == 2:
-        classification = "suspicious"
-    else:
-        classification = "benign"
+def analyse_url(url: str):
+    for bad_url in BLACKLIST:
+        if bad_url in url:
+            return {
+                "prediction": "phishing",
+                "confidence": 1.0,
+                "reasons": ["URL matches known phishing domain"]
+            }
 
     return {
-        "classification": classification,
-        "score": score,
-        "reasons": reasons
+        "prediction": "safe",
+        "confidence": 0.9,
+        "reasons": ["URL not found in blacklist"]
     }
