@@ -1,10 +1,17 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from controllers.analysis import router
 
 app = FastAPI()
 
-app.include_router(router)
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["chrome-extension://jalianmoiocjfglkikmfdpaphlafccic"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.get("/")
-def root():
-    return {"status": "Phishing detection backend running"}
+# Include routes
+app.include_router(router)
