@@ -1,37 +1,71 @@
-document.getElementById("checkBtn").addEventListener("click", async () => {
+// Determine severity level
+function getLevel(reason) {
+    const r = reason.toLowerCase();
 
-    const resultText = document.getElementById("result");
-    const reasonsList = document.getElementById("reasons");
-
-    resultText.innerText = "Checking...";
-    reasonsList.innerHTML = "";
-
-    let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let url = tab.url;
-
-    try {
-        let response = await fetch("http://127.0.0.1:8000/analyse", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ url: url })
-        });
-
-        let data = await response.json();
-
-        // Display result
-        resultText.innerText = data.prediction.toUpperCase();
-        resultText.className = data.prediction;
-
-        // Display reasons
-        data.reasons.forEach(reason => {
-            let li = document.createElement("li");
-            li.innerText = reason;
-            reasonsList.appendChild(li);
-        });
-
-    } catch (error) {
-        resultText.innerText = "Error connecting to backend";
+    if (r.includes("blacklist") || r.includes("impersonation") || r.includes("password")) {
+        return "high";
     }
-});
+
+    if (r.includes("external") || r.includes("forms") || r.includes("anchors")) {
+        return "medium";
+    }
+
+    return "low";
+}
+
+// Load stored analysis
+function loadAnalysis() {
+
+    chrome.storage.local.get("analysisResult", (result) => {
+
+        const wrapper = result.analysisResult;
+
+        const statusDiv = document.getElementById("status");
+        const confidenceDiv = document.getElementById("confidence");
+        const reasonsDiv = document.getElementById("reasons");
+        const noDataDiv = document.getElementById("noData");
+
+        if (!wrapper || !wrapper.data) {
+            statusDiv.innerText = "No Data";
+            noDataDiv.style.display = "block";
+            return;
+        }
+
+        const data = wrapper.data;
+
+        // 🔥 STATUS TEXT
+        statusDiv.innerText = data.prediction.toUpperCase();
+
+        // 🔥 STATUS COLOR
+        if (data.prediction === "phishing") {
+            statusDiv.style.backgroundColor = "#e74c3c";
+        } else if (data.prediction === "suspicious") {
+            statusDiv.style.backgroundColor = "#f39c12";
+        } else {
+            statusDiv.style.backgroundColor = "#2ecc71";
+        }
+
+        // 🔥 CONFIDENCE
+        confidenceDiv.innerText = `Confidence: ${Math.round(data.confidence * 100)}%`;
+
+        // 🔥 REASONS LIST
+        reasonsDiv.innerHTML = "";
+
+        data.reasons.forEach(reason => {
+
+            const div = document.createElement("div");
+
+            const level = getLevel(reason);
+
+            div.className = "reason " + level;
+
+            div.innerText = reason;
+
+            reasonsDiv.appendChild(div);
+        });
+
+    });
+}
+
+// Run when popup opens
+loadAnalysis();

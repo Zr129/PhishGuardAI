@@ -6,8 +6,11 @@ router = APIRouter()
 
 @router.post("/analyse")
 def analyse_url_endpoint(request: URLRequest):
+
+    print("Received features:")
+    print(request)
     try:
-        result = analyse_url_service(request.url)
+        result = analyse_url_service(request)
 
         return {
             "url": request.url,
@@ -18,3 +21,4 @@ def analyse_url_endpoint(request: URLRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    

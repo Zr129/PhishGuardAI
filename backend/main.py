@@ -7,11 +7,11 @@ app = FastAPI()
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["chrome-extension://jalianmoiocjfglkikmfdpaphlafccic"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+#chrome-extension://jalianmoiocjfglkikmfdpaphlafccic
 # Include routes
 app.include_router(router)

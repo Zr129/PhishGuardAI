@@ -1,38 +1,75 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Phishing Detector</title>
-  <style>
-    body {
-      font-family: Arial;
-      width: 250px;
-      padding: 10px;
-      text-align: center;
-    }
+    <title>PhishGuard</title>
 
-    button {
-      padding: 8px;
-      margin-top: 10px;
-      width: 100%;
-      cursor: pointer;
-    }
+    <style>
+        body {
+            font-family: Arial;
+            width: 260px;
+            padding: 12px;
+            background-color: #f5f5f5;
+        }
 
-    .safe { color: green; }
-    .phishing { color: red; }
-    .unknown { color: orange; }
-  </style>
+        #status {
+            font-weight: bold;
+            font-size: 18px;
+            padding: 10px;
+            text-align: center;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            color: white;
+        }
+
+        #confidence {
+            text-align: center;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        #reasons {
+            font-size: 13px;
+        }
+
+        .reason {
+            background: white;
+            padding: 6px;
+            margin-bottom: 6px;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+
+        .high {
+            border-left-color: red;
+        }
+
+        .medium {
+            border-left-color: orange;
+        }
+
+        .low {
+            border-left-color: green;
+        }
+
+        #title {
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+    </style>
 </head>
 
 <body>
 
-  <h3>URL Check</h3>
+    <div id="title">PhishGuard</div>
 
-  <button id="checkBtn">Analyse Site</button>
+    <div id="status">Checking...</div>
 
-  <p id="result"></p>
-  <ul id="reasons"></ul>
+    <div id="confidence"></div>
 
-  <script src="popup.js"></script>
+    <div id="reasons"></div>
+
+    <script src="popup.js"></script>
 
 </body>
 </html>
