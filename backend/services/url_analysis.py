@@ -53,9 +53,13 @@ def analyse_url(data):
     # --- TIER 3: SMART BRAND ANALYSIS ---
     if data.brand_keyword:
         brand = data.brand_keyword.lower()
-        # Official check: Does the domain end with the brand (e.g., 'amazon.com')?
-        # This handles subdomains like 'aws.amazon.com' correctly.
-        is_official = domain.endswith(f"{brand}.com") or domain.endswith(f"{brand}.co.uk") or domain.endswith(f"{brand}.net")
+        # Check if the brand is the main part of the registered domain
+        # This prevents 'amazon.com.phish.cc' from passing
+        domain_parts = domain.split('.')
+        if len(domain_parts) >= 2:
+            # Look at the second-to-last part (e.g., 'amazon' in 'www.amazon.com')
+            main_domain = domain_parts[-2] 
+            is_official = (brand == main_domain)
         
         if not is_official:
             reason = f"Brand Impersonation: Page claims to be {brand.capitalize()} but uses an unofficial domain ({domain})"
@@ -84,13 +88,21 @@ def analyse_url(data):
 
     # --- FINAL JUDGMENT ---
     if suspicious_triggers:
+        # 1. Start with a lower base (e.g., 0.40)
+        # 2. Add 0.15 for each additional unique trigger found
+        base_confidence = 0.40 
+        additional_weight = (len(suspicious_triggers) - 1) * 0.15
+        
+        calc_confidence = base_confidence + additional_weight
+        
+        # 3. Cap it at 0.95 unless there's a "Critical" threat (like a password mismatch)
+        final_score = min(calc_confidence, 0.95)
         return {
-            "action": "WARN",
-            "prediction": "suspicious",
-            "confidence": min(0.7 + (len(suspicious_triggers) * 0.1), 0.95),
-            "reasons": suspicious_triggers
-        }
-
+        "action": "WARN",
+        "prediction": "suspicious",
+        "confidence": round(final_score, 2),
+        "reasons": suspicious_triggers
+    }
     # --- TIER 5: SAFE ---
     return {
         "action": "ALLOW",
