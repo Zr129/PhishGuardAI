@@ -1,4 +1,5 @@
-from utils.url_features import extract_url_features
+from utils.url_features import extract_refined_features
+
 
 def load_blacklist():
     with open("blacklist.txt", "r") as f:
@@ -8,8 +9,14 @@ BLACKLIST = load_blacklist()
 
 
 def analyse_url(data):
+    # --- PRE-PROCESSING (Local & Instant) ---
+    # We use our utility to get the "Real" Registered Domain (TLD+1)
+    # This solves the Palo Alto subdomain issue immediately.
+    refined = extract_refined_features(data.url, data.links)
+    
     url = data.url.lower()
-    domain = data.domain.lower()
+    domain = refined['registered_domain'] # Use cleaned domain from tldextract
+    base_name = refined['base_domain']     # e.g., "paloaltonetworks"
     suspicious_triggers = []
 
     # --- TIER 1: BLACKLIST (INSTANT EXIT) ---
@@ -23,8 +30,8 @@ def analyse_url(data):
             }
 
     # --- TIER 2: CRITICAL THREATS (DETERMINISTIC BLOCKS) ---
-    # Rule A: IP-Based Identity (Very high signal for phishing)
-    if data.has_ip:
+    # Rule A: IP-Based Identity
+    if refined['is_ip']:
         return {
             "action": "BLOCK",
             "prediction": "phishing",
@@ -47,23 +54,19 @@ def analyse_url(data):
             "action": "BLOCK",
             "prediction": "phishing",
             "confidence": 0.98,
-            "reasons": ["Insecure Harvesting: Password field detected on a non-encrypted (HTTP) page"]
+            "reasons": ["Insecure Harvesting: Password field detected on non-encrypted (HTTP) page"]
         }
 
-    # --- TIER 3: SMART BRAND ANALYSIS ---
+    # --- TIER 3: SMART BRAND ANALYSIS (TLD Optimized) ---
     if data.brand_keyword:
         brand = data.brand_keyword.lower()
-        # Check if the brand is the main part of the registered domain
-        # This prevents 'amazon.com.phish.cc' from passing
-        domain_parts = domain.split('.')
-        if len(domain_parts) >= 2:
-            # Look at the second-to-last part (e.g., 'amazon' in 'www.amazon.com')
-            main_domain = domain_parts[-2] 
-            is_official = (brand == main_domain)
+        
+        # We check if the brand is part of the 'base_domain' extracted by tldextract
+        # This correctly allows 'sso.paloaltonetworks.com' because 'paloalto' is in 'paloaltonetworks'
+        is_official = (brand in base_name)
         
         if not is_official:
             reason = f"Brand Impersonation: Page claims to be {brand.capitalize()} but uses an unofficial domain ({domain})"
-            # If there's a password field on a fake brand site, BLOCK immediately.
             if data.has_password_field:
                 return {
                     "action": "BLOCK",
@@ -73,36 +76,32 @@ def analyse_url(data):
                 }
             suspicious_triggers.append(reason)
 
-    # --- TIER 4: STRUCTURAL ANOMALIES (SUSPICIOUS) ---
+    # --- TIER 4: STRUCTURAL ANOMALIES (TLD Optimized) ---
     
-    # Check for "Fake Nav" (Optimized for Amazon/Big sites)
+    # Check for "Fake Nav"
     if data.total_anchors > 0:
         empty_percent = (data.empty_anchors / data.total_anchors) * 100 
-        # Only flag if raw count is high (>30) AND ratio is high (>40%)
         if data.empty_anchors > 30 and empty_percent > 40:
-            suspicious_triggers.append(f"Suspicious UI: {round(empty_percent)}% of navigation links are dead/empty placeholders")
+            suspicious_triggers.append(f"Suspicious UI: {round(empty_percent)}% of links are dead placeholders")
 
-    # Check for "Isolator" Kits (Template behavior)
-    if data.ext_anchor_ratio > 0.85 and data.num_links_external > 10:
+    # Check for "Isolator" Kits
+    # We use refined['external_ratio'] which correctly ignores subdomains
+    if refined['external_ratio'] > 0.85 and refined['total_links'] > 10:
         suspicious_triggers.append("Structural Anomaly: High ratio of external links typical of phishing templates")
 
     # --- FINAL JUDGMENT ---
     if suspicious_triggers:
-        # 1. Start with a lower base (e.g., 0.40)
-        # 2. Add 0.15 for each additional unique trigger found
         base_confidence = 0.40 
         additional_weight = (len(suspicious_triggers) - 1) * 0.15
-        
         calc_confidence = base_confidence + additional_weight
         
-        # 3. Cap it at 0.95 unless there's a "Critical" threat (like a password mismatch)
         final_score = min(calc_confidence, 0.95)
         return {
-        "action": "WARN",
-        "prediction": "suspicious",
-        "confidence": round(final_score, 2),
-        "reasons": suspicious_triggers
-    }
+            "action": "WARN",
+            "prediction": "suspicious",
+            "confidence": round(final_score, 2),
+            "reasons": suspicious_triggers
+        }
     # --- TIER 5: SAFE ---
     return {
         "action": "ALLOW",
