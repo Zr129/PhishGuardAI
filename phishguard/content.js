@@ -1,227 +1,113 @@
-// Prevent script from running multiple times
-if (window.hasRunPhishGuard) {
-    console.log("Already ran, skipping...");
-} else {
+(async () => {
+    if (window.hasRunPhishGuard) return;
     window.hasRunPhishGuard = true;
 
-    // Display warning banner
-    function showWarningBanner(prediction, confidence) {
-        const existingBanner = document.getElementById("phishguard-warning-banner");
-        if (existingBanner) {
-            existingBanner.remove();
-        }
-
-        const safeConfidence = typeof confidence === "number" ? confidence : 0;
+    // --- 1. UI COMPONENT: THE WARNING BANNER ---
+    function injectWarningBanner(prediction, reason, confidence) {
+        const oldBanner = document.getElementById("phishguard-alert-banner");
+        if (oldBanner) oldBanner.remove();
 
         const banner = document.createElement("div");
-        banner.id = "phishguard-warning-banner";
+        banner.id = "phishguard-alert-banner";
+        
+        // Red for BLOCK (Phishing), Orange for WARN (Suspicious)
+        const isBlock = prediction.toUpperCase() === "BLOCK" || prediction.toLowerCase().includes("phish");
+        const bgColor = isBlock ? "#d93025" : "#f29900"; 
 
-        // Banner styling
-        banner.style.position = "fixed";
-        banner.style.top = "0";
-        banner.style.left = "0";
-        banner.style.width = "100%";
-        banner.style.padding = "12px";
-        banner.style.zIndex = "2147483647";
-        banner.style.fontSize = "14px";
-        banner.style.fontWeight = "bold";
-        banner.style.display = "flex";
-        banner.style.justifyContent = "space-between";
-        banner.style.alignItems = "center";
-        banner.style.boxShadow = "0 2px 6px rgba(0,0,0,0.2)";
-        banner.style.color = "white";
-        banner.style.fontFamily = "Arial, sans-serif";
+        Object.assign(banner.style, {
+            position: "fixed", top: "0", left: "0", width: "100%", zIndex: "2147483647",
+            padding: "14px 20px", backgroundColor: bgColor, color: "white",
+            fontWeight: "bold", fontSize: "15px", fontFamily: "Arial, sans-serif",
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
+        });
 
-        // Set colour based on prediction
-        if (prediction === "phishing") {
-            banner.style.backgroundColor = "#e74c3c";
-        } else {
-            banner.style.backgroundColor = "#f39c12";
-        }
+        banner.innerHTML = `
+            <div>⚠️ <strong>PhishGuard Alert:</strong> ${reason}</div>
+            <button id="pg-close" style="background:none; border:none; color:white; font-size:20px; cursor:pointer;">&times;</button>
+        `;
 
-        // Banner text
-        const text = document.createElement("div");
-        text.textContent = `${prediction.toUpperCase()} detected (${Math.round(safeConfidence * 100)}%)`;
+        document.documentElement.prepend(banner);
+        document.getElementById("pg-close").onclick = () => banner.remove();
+    }
 
-        // Action buttons container
-        const actions = document.createElement("div");
-        actions.style.display = "flex";
-        actions.style.alignItems = "center";
-        actions.style.gap = "8px";
+    // --- 2. FEATURE EXTRACTION ENGINE ---
+    function scrapeFeatures() {
+        const url = window.location.href;
+        const host = window.location.hostname.replace(/^www\./, "");
+        const title = document.title.toLowerCase();
+        const anchors = Array.from(document.querySelectorAll("a"));
+        const forms = Array.from(document.querySelectorAll("form"));
+        const totalAnchors = anchors.length;
 
-        // View details button
-        const detailsBtn = document.createElement("button");
-        detailsBtn.textContent = "View Details";
-        detailsBtn.style.padding = "4px 8px";
-        detailsBtn.style.cursor = "pointer";
-        detailsBtn.style.border = "none";
-        detailsBtn.style.borderRadius = "4px";
+        let externalLinks = 0;
+        anchors.forEach(a => {
+            try {
+                const linkHost = new URL(a.href, window.location.origin).hostname.replace(/^www\./, "");
+                if (linkHost !== host) externalLinks++;
+            } catch(e) {}
+        });
 
-        detailsBtn.onclick = () => {
-            alert("Click the PhishGuard extension icon to view full analysis.");
+        let hasPass = !!document.querySelector("input[type='password']");
+        let remoteAction = false;
+        forms.forEach(f => {
+            if (f.querySelector("input[type='password']")) {
+                const action = f.getAttribute("action");
+                try {
+                    const actHost = new URL(action, window.location.href).hostname.replace(/^www\./, "");
+                    if (actHost !== host) remoteAction = true;
+                } catch(e) { remoteAction = true; }
+            }
+        });
+
+        // Brand Mismatch Check (Deterministic Tier 2)
+        const brands = ['paypal', 'amazon', 'microsoft', 'google', 'netflix'];
+        const foundBrand = brands.find(b => title.includes(b)) || "";
+        const mismatch = foundBrand !== "" && !host.includes(foundBrand);
+
+        return {
+            url: url,
+            domain: host,
+            is_https: window.location.protocol === "https:",
+            has_password_field: hasPass,
+            action_to_different_domain: remoteAction,
+            ext_anchor_ratio: anchors.length > 0 ? (externalLinks / anchors.length) : 0,
+            num_links_external: externalLinks,
+            empty_anchors: anchors.filter(a => !a.getAttribute("href") || a.getAttribute("href") === "#").length,
+            total_anchors: totalAnchors,
+            brand_keyword_count: foundBrand ? 1 : 0,
+            brand_mismatch: mismatch,
+            has_ip: /\d+\.\d+\.\d+\.\d+/.test(host)
         };
+    }
 
-        // Close banner button
-        const closeBtn = document.createElement("button");
-        closeBtn.textContent = "✖";
-        closeBtn.style.padding = "4px 8px";
-        closeBtn.style.cursor = "pointer";
-        closeBtn.style.border = "none";
-        closeBtn.style.borderRadius = "4px";
+    // --- 3. ANALYZE & SYNC ---
+    async function performAnalysis() {
+        const features = scrapeFeatures();
+        
+        chrome.runtime.sendMessage({ type: "ANALYZE_PAGE", data: features }, (response) => {
+            if (response) {
+                // IMPORTANT: Save to storage so Popup.js can see it
+                chrome.storage.local.set({ 
+                    analysisResult: { url: features.url, data: response } 
+                });
 
-        closeBtn.onclick = () => banner.remove();
-
-        // Append buttons
-        actions.appendChild(detailsBtn);
-        actions.appendChild(closeBtn);
-
-        banner.appendChild(text);
-        banner.appendChild(actions);
-
-        // Safely inject banner into DOM
-        const injectBanner = () => {
-            if (!document.getElementById("phishguard-warning-banner")) {
-                if (document.documentElement) {
-                    document.documentElement.prepend(banner);
-                } else if (document.body) {
-                    document.body.prepend(banner);
+                // Trigger UI if deterministic rules hit
+                if (response.action === "BLOCK" || response.action === "WARN") {
+                    injectWarningBanner(response.action, response.reasons[0], response.confidence);
                 }
             }
-        };
-
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", injectBanner, { once: true });
-        } else {
-            injectBanner();
-        }
+        });
     }
 
-    // Extract clean domain from URL
-    function getDomain(url) {
-        try {
-            return new URL(url).hostname.replace(/^www\./, "");
-        } catch (error) {
-            return "";
+    performAnalysis();
+
+    const observer = new MutationObserver(() => {
+        if (document.querySelector("input[type='password']")) {
+            performAnalysis();
+            observer.disconnect();
         }
-    }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    // Main execution block
-    (async () => {
-        try {
-            console.log("PhishGuard running...");
-
-            const url = window.location.href;
-            const domain = getDomain(url);
-            const title = document.title || "";
-
-            const knownBrands = ["paypal", "amazon", "google", "facebook"];
-
-            let brandMismatch = false;
-            let detectedBrand = null;
-
-            // Detect brand mismatch between title and domain
-            knownBrands.forEach((brand) => {
-                if (title.toLowerCase().includes(brand) && !domain.includes(brand)) {
-                    brandMismatch = true;
-                    detectedBrand = brand;
-                }
-            });
-
-            // Extract page features
-            const forms = document.querySelectorAll("form");
-            const passwordFields = document.querySelectorAll("input[type='password']");
-            const scripts = document.querySelectorAll("script");
-            const iframes = document.querySelectorAll("iframe");
-            const hiddenElements = document.querySelectorAll("[type='hidden']");
-            const anchors = document.querySelectorAll("a");
-
-            let externalAnchors = 0;
-            let emptyAnchors = 0;
-
-            // Analyse anchor tags
-            anchors.forEach((a) => {
-                try {
-                    const href = a.getAttribute("href");
-
-                    if (!href || href.trim() === "" || href === "#" || href.startsWith("javascript")) {
-                        emptyAnchors++;
-                    } else {
-                        const fullUrl = new URL(href, window.location.origin);
-                        const linkDomain = fullUrl.hostname.replace(/^www\./, "");
-
-                        if (linkDomain && linkDomain !== domain) {
-                            externalAnchors++;
-                        }
-                    }
-                } catch (error) {
-                    console.log("Anchor parsing skipped:", error);
-                }
-            });
-
-            // Build features object
-            const features = {
-                url,
-                domain,
-                title: title.toLowerCase(),
-                numForms: forms.length,
-                numPasswordFields: passwordFields.length,
-                numScripts: scripts.length,
-                numIframes: iframes.length,
-                hiddenElements: hiddenElements.length,
-                totalAnchors: anchors.length,
-                externalAnchors,
-                emptyAnchors,
-                brandMismatch,
-                detectedBrand: detectedBrand || "",
-                timestamp: Date.now()
-            };
-
-            console.log("Extracted features:", features);
-
-            // Send features to background.js
-            chrome.runtime.sendMessage(
-                {
-                    type: "ANALYZE_PAGE",
-                    features: features
-                },
-                (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.error("Message error:", chrome.runtime.lastError.message);
-                        return;
-                    }
-
-                    console.log("Received from background:", response);
-
-                    if (!response) {
-                        console.log("No response received.");
-                        return;
-                    }
-
-                    const prediction = String(response.prediction || "").trim().toLowerCase();
-                    const confidence = typeof response.confidence === "number" ? response.confidence : 0;
-
-                    console.log("Prediction:", prediction);
-                    console.log("Confidence:", confidence);
-
-                    // Show warning banner if threat detected
-                    if (prediction.includes("phishing") || prediction.includes("suspicious")) {
-                        console.log("Showing banner...");
-                        showWarningBanner(prediction, confidence);
-                    } else {
-                        console.log("No threat detected.");
-                    }
-
-                    // Store result for popup usage
-                    chrome.storage.local.set({
-                        analysisResult: {
-                            url: url,
-                            data: response
-                        }
-                    });
-                }
-            );
-        } catch (error) {
-            console.error("Content script error:", error);
-        }
-    })();
-}
+})();

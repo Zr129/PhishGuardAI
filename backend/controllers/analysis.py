@@ -14,6 +14,7 @@ def analyse_url_endpoint(request: URLRequest):
 
         return {
             "url": request.url,
+            "action": result["action"],
             "prediction": result["prediction"],
             "confidence": result["confidence"],
             "reasons": result["reasons"]
