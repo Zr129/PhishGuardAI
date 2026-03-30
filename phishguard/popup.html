@@ -1,68 +1,39 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>PhishGuard</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            width: 280px;
-            padding: 15px;
-            background-color: #ffffff;
-            color: #333;
-        }
-        #title {
-            text-align: center;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #7f8c8d;
-            margin-bottom: 10px;
-        }
-        #status {
-            font-weight: bold;
-            font-size: 20px;
-            padding: 12px;
-            text-align: center;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            color: white;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        #confidence {
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 13px;
-            color: #666;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 10px;
-        }
-        .reason {
-            background: #f9f9f9;
-            padding: 8px 10px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            font-size: 12px;
-            line-height: 1.4;
-            border-left: 5px solid #ccc;
-        }
-        .high { border-left-color: #e74c3c; background: #fdf2f2; }
-        .medium { border-left-color: #f39c12; background: #fffaf0; }
-        .low { border-left-color: #2ecc71; background: #f2fdf5; }
-        
-        .footer {
-            margin-top: 15px;
-            font-size: 10px;
-            text-align: center;
-            color: #bdc3c7;
-        }
-    </style>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div id="title">Shield Active</div>
-    <div id="status">SCANNING...</div>
-    <div id="confidence"></div>
-    <div id="reasons"></div>
-    <div class="footer">PhishGuard Deterministic Engine v1.0</div>
+    <div class="app-container">
+        <header class="header">
+            <div class="brand">
+                <span class="shield-icon">🛡️</span>
+                <h1 class="title">PhishGuard</h1>
+            </div>
+            <div id="status" class="status-pill idle">IDLE</div>
+        </header>
+
+        <section class="site-info">
+            <p class="label">Current Website</p>
+            <h2 id="current-domain">Analyzing...</h2>
+            <div class="confidence-bar-container">
+                <div id="confidence-fill" class="confidence-fill" style="width: 0%"></div>
+            </div>
+            <span id="confidence" class="confidence-text">Threat Certainty: 0%</span>
+        </section>
+
+        <section class="analysis-section">
+            <p class="label">Security Report</p>
+            <div id="reasons" class="reasons-list">
+                </div>
+        </section>
+        
+        <footer class="footer">
+            <p>Real-time protection active</p>
+        </div>
+    </div>
+
     <script src="popup.js"></script>
 </body>
 </html>

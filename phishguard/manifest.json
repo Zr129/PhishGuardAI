@@ -1,14 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Phishing Detector",
+  "name": "PhishGuard Detector",
   "version": "1.0",
-  "description": "Detect phishing sites using URL analysis",
+  "description": "Real-time phishing detection using behavioral and brand analysis.",
 
-  "permissions": ["storage","activeTab", "scripting"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs" 
+  ],
 
   "host_permissions": [
     "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*"
+    "http://127.0.0.1:8000/*",
+    "<all_urls>"
   ],
 
   "background": {
@@ -22,7 +28,8 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": ["content.js"],
+      "run_at": "document_idle"
     }
   ]
 }

@@ -1,0 +1,113 @@
+:root {
+    --bg-color: #f4f7f6;
+    --card-bg: #ffffff;
+    --text-main: #2c3e50;
+    --text-muted: #7f8c8d;
+    --high-risk: #e74c3c;
+    --warn-risk: #f39c12;
+    --safe-green: #27ae60;
+}
+
+body {
+    width: 350px;
+    margin: 0;
+    background-color: var(--bg-color);
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: var(--text-main);
+}
+
+.app-container {
+    padding: 20px;
+}
+
+/* Header Styling */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.brand { display: flex; align-items: center; gap: 8px; }
+.shield-icon { font-size: 20px; }
+.title { font-size: 18px; margin: 0; font-weight: 800; letter-spacing: -0.5px; }
+
+/* Status Pill */
+.status-pill {
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.status-pill.block { background: var(--high-risk); }
+.status-pill.warn  { background: var(--warn-risk); }
+.status-pill.allow { background: var(--safe-green); }
+.status-pill.idle  { background: #95a5a6; }
+
+/* Site Context Card */
+.site-info {
+    background: var(--card-bg);
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    margin-bottom: 20px;
+}
+
+.label { 
+    font-size: 10px; 
+    text-transform: uppercase; 
+    font-weight: 700; 
+    color: var(--text-muted); 
+    margin: 0 0 5px 0;
+}
+
+#current-domain {
+    font-size: 16px;
+    margin: 0 0 10px 0;
+    color: var(--text-main);
+    word-break: break-all;
+}
+
+/* Confidence Progress Bar */
+.confidence-bar-container {
+    height: 6px;
+    background: #eee;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.confidence-fill {
+    height: 100%;
+    background: var(--safe-green);
+    transition: width 0.5s ease-in-out, background 0.3s;
+}
+
+.confidence-text { font-size: 12px; color: var(--text-muted); }
+
+/* Reason Cards */
+.reason {
+    background: white;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-top: 8px;
+    border-left: 4px solid #ddd;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    display: flex;
+    align-items: center;
+}
+
+.reason.high { border-left-color: var(--high-risk); background: #fff5f5; }
+.reason.medium { border-left-color: var(--warn-risk); background: #fffaf0; }
+.reason.low { border-left-color: #3498db; background: #f0f7ff; }
+
+.footer {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 10px;
+    color: var(--text-muted);
+}
