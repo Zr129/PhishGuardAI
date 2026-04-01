@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from models.models import URLRequest
+import traceback
 from services.url_analysis import analyse_url as analyse_url_service
 
 router = APIRouter()
@@ -11,6 +12,7 @@ def analyse_url_endpoint(request: URLRequest):
     print(request)
     try:
         result = analyse_url_service(request)
+        print(f"Result: {result['action']} | Reasons: {result['reasons']}")
 
         return {
             "url": request.url,
@@ -21,5 +23,6 @@ def analyse_url_endpoint(request: URLRequest):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
     

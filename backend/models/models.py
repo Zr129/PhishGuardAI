@@ -6,18 +6,19 @@ class URLRequest(BaseModel):
     domain: str
     title: str
     is_https: bool
+    
+    # --- NEW: FRAME & FORM LOGIC ---
+    is_main_frame: bool              # Crucial for IFrame detection
+    is_hidden_submission: bool        # Detects JS-based form cloaking
+    
     has_password_field: bool
     action_to_different_domain: bool
     
-    # --- ADD THIS LINE ---
-    # This matches the rawLinks array from your JS
+    # --- LINK DATA ---
     links: List[str] = [] 
-    
     ext_anchor_ratio: float
     num_links_external: int
     empty_anchors: int
     total_anchors: int
     
-    # Use Optional or a default value for strings that might be empty
-    brand_keyword: Optional[str] = "" 
     has_ip: bool
