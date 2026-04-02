@@ -1,17 +1,20 @@
 from fastapi import APIRouter, HTTPException
 from models.models import URLRequest
 import traceback
-from services.url_analysis import analyse_url as analyse_url_service
+from services.url_analysis import URLAnalyser
+
 
 router = APIRouter()
+analyser = URLAnalyser()
 
 @router.post("/analyse")
 def analyse_url_endpoint(request: URLRequest):
 
+
     print("Received features:")
     print(request)
     try:
-        result = analyse_url_service(request)
+        result = analyser.analyse(request)
         print(f"Result: {result['action']} | Reasons: {result['reasons']}")
 
         return {

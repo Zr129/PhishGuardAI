@@ -1,8 +1,20 @@
-from utils.url_features import extract_refined_features
-import traceback
+import logging
 import re
+from utils.url_features import extract_refined_features
 
-# Professional Brand List - Easier to manage on the backend
+
+# ---------------------------
+# LOGGING CONFIGURATION
+# ---------------------------
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("PhishGuard")
+
+
+# ---------------------------
+# CONSTANTS
+# ---------------------------
+
 PROTECTED_BRANDS = {
     'paypal': ['paypal.com', 'paypal-corp.com'],
     'amazon': ['amazon.com', 'amazon.co.uk', 'amazon.de', 'aws.amazon.com'],
@@ -14,114 +26,239 @@ PROTECTED_BRANDS = {
     'paloalto': ['paloaltonetworks.com']
 }
 
-def load_blacklist():
-    try:
-        with open("blacklist.txt", "r") as f:
-            return [line.strip().lower() for line in f.readlines() if line.strip()]
-    except FileNotFoundError:
-        return []
 
-BLACKLIST = load_blacklist()
+class URLAnalyser:
 
-def analyse_url(data):
-    print(f"--- Analysis Started: {data.domain} ---")
-    
-    try:
-        refined = extract_refined_features(data.url, data.links)
+    def __init__(self):
+        self.blacklist = self.load_blacklist()
+        self.protected_brands = PROTECTED_BRANDS
+
+    # ---------------------------
+    # LOAD BLACKLIST
+    # ---------------------------
+
+    def load_blacklist(self):
+        try:
+            with open("blacklist.txt", "r") as f:
+                entries = [line.strip().lower() for line in f if line.strip()]
+
+            logger.info(f"[INIT] Loaded {len(entries)} blacklist entries")
+            return entries
+
+        except FileNotFoundError:
+            logger.warning("[INIT] blacklist.txt not found")
+            return []
+
+    # ---------------------------
+    # DOMAIN HELPER
+    # ---------------------------
+
+    def is_legit_domain(self, domain, official_domains):
+        return any(domain == d or domain.endswith("." + d) for d in official_domains)
+
+    # ---------------------------
+    # TIER 1 — HARD RULES
+    # ---------------------------
+
+    def check_blacklist(self, domain):
+        return any(domain == bad or domain.endswith("." + bad) for bad in self.blacklist)
+
+    def check_ip_address(self, refined):
+        return refined.get("is_ip", False)
+
+    def check_iframe_trap(self, data):
+        return (not getattr(data, "is_main_frame", True)) and getattr(data, "has_password_field", False)
+
+    def check_insecure_password(self, data):
+        return getattr(data, "has_password_field", False) and not getattr(data, "is_https", True)
+
+    def check_brand_impersonation(self, data, domain, title):
         url_lower = data.url.lower()
-        domain = refined['registered_domain'] # e.g., "palo-alto-login.com"
-        base_name = refined['base_domain']     # e.g., "palo-alto-login"
-        suspicious_triggers = []
+        title_lower = title.lower()
 
-        # --- TIER 1: BLACKLIST ---
-        if any(bad_url in url_lower for bad_url in BLACKLIST):
-            return {"action": "BLOCK", "prediction": "phishing", "confidence": 1.0, "reasons": ["Known Phishing Database Match"]}
+        for brand, domains in self.protected_brands.items():
 
-        # --- TIER 2: IFRAME & FORM ANOMALIES (The "Behavioral" Trap) ---
-        
-        # Rule A: Malicious IFrame Overlay
-        if not data.is_main_frame and data.has_password_field:
-            print("TRIGGER: Malicious IFrame Login")
-            return {
-                "action": "BLOCK",
-                "prediction": "phishing",
-                "confidence": 1.0,
-                "reasons": ["Hidden Login Trap: Password requested inside a sub-frame"]
-            }
+            if brand in title_lower or brand in url_lower:
 
-        if data.has_password_field:
-            # Rule B: Hidden Submission (JS Cloaking)
-            if data.is_hidden_submission:
-                suspicious_triggers.append("Cloaked Form: Destination hidden via JavaScript")
-            
-            # Rule C: External Submission (Credential Harvesting)
-            if data.action_to_different_domain:
-                return {
-                    "action": "BLOCK",
-                    "prediction": "phishing",
-                    "confidence": 1.0,
-                    "reasons": ["Credential Harvesting: Form submits data to an external domain"]
-                }
+                is_official = self.is_legit_domain(domain, domains)
 
-            # Rule D: Insecure Login
-            if not data.is_https:
-                return {"action": "BLOCK", "prediction": "phishing", "confidence": 0.95, "reasons": ["Insecure Harvesting: Password field on HTTP page"]}
-
-        # --- TIER 3: SMART BRAND ANALYSIS (The "Identity" Check) ---
-        
-        # Logic: Check the Page Title for brands and verify the domain
-        found_brand = None
-        title_lower = data.title.lower()
-        
-        for brand_key, official_domains in PROTECTED_BRANDS.items():
-            if brand_key in title_lower:
-                found_brand = brand_key
-                # Check if the current domain is in the list of official domains
-                is_official = any(off_dom in domain for off_dom in official_domains)
-                
                 if not is_official:
-                    reason = f"Brand Impersonation: Page claims to be {brand_key.capitalize()} but is hosted on {domain}"
-                    if data.has_password_field:
-                        return {
-                            "action": "BLOCK",
-                            "prediction": "phishing",
-                            "confidence": 1.0,
-                            "reasons": [reason, "Credential Theft: Fake brand login page"]
-                        }
-                    suspicious_triggers.append(reason)
-                break
+                    reason = f"Brand impersonation: {brand} detected on {domain}"
 
-        # --- TIER 4: STRUCTURAL & URL ANOMALIES ---
-        
-        # Rule E: URL Character Tricks (@ symbol, IP address, dashes)
-        if "@" in url_lower:
-            suspicious_triggers.append("URL Obfuscation: Dangerous '@' symbol used")
-        
-        if refined['is_ip']:
-            return {"action": "BLOCK", "prediction": "phishing", "confidence": 1.0, "reasons": ["IP-Address Phishing: Host is a raw IP address"]}
+                    if getattr(data, "has_password_field", False):
+                        return True, [
+                            reason,
+                            "Credential harvesting risk"
+                        ]
 
-        # Rule F: Content "Hollowness" (Phishing Templates)
-        if data.total_anchors > 5:
-            empty_ratio = data.empty_anchors / data.total_anchors
-            if empty_ratio > 0.5:
-                suspicious_triggers.append(f"Structural Anomaly: {int(empty_ratio*100)}% of links are dead placeholders")
+                    return False, [reason]
 
-        if refined['external_ratio'] > 0.85 and data.total_anchors > 10:
-            suspicious_triggers.append("Suspicious Content: Nearly all links point to external sites")
+        return False, []
 
-        # --- FINAL JUDGMENT ---
-        if suspicious_triggers:
-            # Score calculation: Starts at 0.5, adds 0.2 per trigger, caps at 0.98
-            final_score = min(0.5 + (len(suspicious_triggers) * 0.2), 0.98)
-            return {
-                "action": "WARN",
-                "prediction": "suspicious",
-                "confidence": round(final_score, 2),
-                "reasons": suspicious_triggers
-            }
+    # ---------------------------
+    # TIER 2 — HEURISTICS
+    # ---------------------------
 
-        return {"action": "ALLOW", "prediction": "safe", "confidence": 0.0, "reasons": []}
+    def run_heuristics(self, data, refined, domain):
 
-    except Exception as e:
-        print(f"ERROR: {traceback.format_exc()}")
-        return {"action": "ERROR", "prediction": "error", "confidence": 0, "reasons": [str(e)]}
+        score = 0
+        reasons = []
+
+        has_password = getattr(data, "has_password_field", False)
+        hidden = getattr(data, "is_hidden_submission", False)
+        external = getattr(data, "action_to_different_domain", False)
+
+        # URL obfuscation
+        if "@" in data.url:
+            score += 2
+            reasons.append("URL obfuscation using '@'")
+
+        # Suspicious redirect pattern
+        url_no_protocol = data.url.split("://", 1)[-1]
+        if url_no_protocol.count("//") > 1:
+            score += 1
+            reasons.append("Suspicious redirect pattern")
+
+        # Subdomains
+        if refined.get("subdomain_count", 0) > 3:
+            score += 2
+            reasons.append("Excessive subdomains")
+
+        # Domain dashes
+        if refined.get("has_domain_dashes"):
+            score += 1
+            reasons.append("Domain contains dashes")
+
+        # External links
+        if refined.get("external_ratio", 0) > 0.9 and getattr(data, "total_anchors", 0) > 15:
+            score += 2
+            reasons.append("High external link ratio")
+
+        # Dead links
+        total = getattr(data, "total_anchors", 0)
+        empty = getattr(data, "empty_anchors", 0)
+
+        if total > 15:
+            ratio = empty / total
+            if ratio > 0.7:
+                score += 2
+                reasons.append("High dead link ratio")
+
+        # ---------------------------
+        # FORM ANALYSIS (CORE LOGIC)
+        # ---------------------------
+
+        if has_password:
+
+            if hidden and external:
+                score += 4
+                reasons.append("Hidden submission to external domain")
+
+            elif external:
+                score += 2
+                reasons.append("Credentials sent to external domain")
+
+            elif hidden:
+                score += 1
+                reasons.append("Hidden form behaviour")
+
+        return score, reasons
+
+    # ---------------------------
+    # CONFIDENCE FUNCTION
+    # ---------------------------
+
+    def confidence(self, score):
+        return min(score * 12, 95)  # smoother scaling
+
+    # ---------------------------
+    # RESPONSE HELPERS
+    # ---------------------------
+
+    def block(self, score, reasons):
+        return {
+            "action": "BLOCK",
+            "prediction": "phishing",
+            "confidence": self.confidence(score),
+            "reasons": reasons
+        }
+
+    def warn(self, score, reasons):
+        return {
+            "action": "WARN",
+            "prediction": "suspicious",
+            "confidence": self.confidence(score),
+            "reasons": reasons
+        }
+
+    def allow(self, score=0):
+        return {
+            "action": "ALLOW",
+            "prediction": "safe",
+            "confidence": self.confidence(score),
+            "reasons": []
+        }
+
+    # ---------------------------
+    # MAIN PIPELINE
+    # ---------------------------
+
+    def analyse(self, data):
+
+        logger.info("========== NEW ANALYSIS ==========")
+        logger.info(f"[URL] {data.url}")
+
+        refined = extract_refined_features(data.url, data.links)
+
+        domain = refined.get("registered_domain", "")
+        title = data.title.lower()
+
+        logger.info(f"[DOMAIN] {domain}")
+
+        # -------- TIER 1 --------
+
+        if self.check_blacklist(domain):
+            logger.info("[BLOCK] Blacklist")
+            return self.block(10, ["Known phishing domain"])
+
+        if self.check_ip_address(refined):
+            logger.info("[BLOCK] IP address")
+            return self.block(10, ["IP address used"])
+
+        if self.check_iframe_trap(data):
+            logger.info("[BLOCK] IFrame trap")
+            return self.block(9, ["Hidden login trap"])
+
+        if self.check_insecure_password(data):
+            logger.info("[BLOCK] HTTP password")
+            return self.block(9, ["Password over HTTP"])
+
+        is_block, reasons = self.check_brand_impersonation(data, domain, title)
+
+        if is_block:
+            logger.info("[BLOCK] Brand impersonation")
+            return self.block(9, reasons)
+
+        logger.info("[TIER 1] Passed")
+
+        # -------- TIER 2 --------
+
+        score, reasons = self.run_heuristics(data, refined, domain)
+
+        for r in reasons:
+            logger.info(f"[FLAG] {r}")
+
+        logger.info(f"[SCORE] {score}")
+
+        # -------- DECISION --------
+
+        if score >= 7:
+            logger.info("[DECISION] BLOCK")
+            return self.block(score, reasons)
+
+        if score >= 3:
+            logger.info("[DECISION] WARN")
+            return self.warn(score, reasons)
+
+        logger.info("[DECISION] ALLOW")
+        return self.allow(score)

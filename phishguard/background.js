@@ -1,60 +1,124 @@
 console.log("PHISHGUARD: BACKGROUND SERVICE WORKER BOOTED");
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    // 1. TOP-LEVEL TRY-CATCH
-    try {
-        console.log("PHISHGUARD: Message received", message.type);
+const API_URL = "http://127.0.0.1:8000/analyse";
 
+// ===============================
+// MAIN MESSAGE HANDLER
+// ===============================
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    try {
+        console.log("PHISHGUARD: Message received →", message.type);
+
+        // -------------------------------
+        // ANALYSIS REQUEST
+        // -------------------------------
         if (message.type === "ANALYZE_PAGE") {
+
             const pageData = message.data;
 
-            if (!pageData) {
-                throw new Error("Received empty data payload from content script.");
+            // Validate payload
+            if (!pageData || !pageData.url || !pageData.domain) {
+                throw new Error("Invalid payload structure");
             }
 
-            // 2. NETWORK FETCH WITH INTERNAL CATCH
-            fetch("http://127.0.0.1:8000/analyse", {
+            // Timeout controller (3s)
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3000);
+
+            fetch(API_URL, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(pageData)
+                body: JSON.stringify(pageData),
+                signal: controller.signal
             })
+
+            // -------------------------------
+            // SUCCESS RESPONSE
+            // -------------------------------
             .then(response => {
-                if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+                clearTimeout(timeout);
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}`);
+                }
+
                 return response.json();
             })
+
             .then(apiResponse => {
-                // 3. STORAGE SYNC WITH ERROR CHECKING
+
+                console.log("PHISHGUARD RESULT:", apiResponse);
+
+                // ✅ ALWAYS SAVE RESULT
                 chrome.storage.local.set({
                     analysisResult: {
                         url: pageData.url,
                         data: apiResponse,
                         timestamp: Date.now()
                     }
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        console.error("PHISHGUARD: Storage Sync Error:", chrome.runtime.lastError);
-                    }
-                    sendResponse(apiResponse);
                 });
+
+                sendResponse(apiResponse);
             })
+
+            // -------------------------------
+            // ERROR HANDLING (CRITICAL FIX)
+            // -------------------------------
             .catch(fetchError => {
-                // This catches network issues (Server down, 404, 500)
-                console.error("PHISHGUARD: Fetch/API Error:", fetchError.message);
-                sendResponse({
-                    action: "ALLOW",
-                    prediction: "error",
-                    reasons: ["Server communication failed"],
-                    confidence: 0
+                clearTimeout(timeout);
+
+                let errorMsg = "Backend unavailable";
+
+                if (fetchError.name === "AbortError") {
+                    console.error("PHISHGUARD: Request timed out");
+                    errorMsg = "Request timed out";
+                } else {
+                    console.error("PHISHGUARD: Fetch/API Error:", fetchError.message);
+                }
+
+                const fallback = {
+                    action: "ERROR",
+                    prediction: "offline",
+                    confidence: 0,
+                    reasons: [errorMsg]
+                };
+
+                // ✅ THIS FIXES YOUR UI STUCK ISSUE
+                chrome.storage.local.set({
+                    analysisResult: {
+                        url: pageData.url,
+                        data: fallback,
+                        timestamp: Date.now()
+                    }
                 });
+
+                sendResponse(fallback);
             });
 
-            // Return true to keep the async channel alive
-            return true; 
+            // Required for async response
+            return true;
         }
+
+        // -------------------------------
+        // IFRAME ALERT (OPTIONAL)
+        // -------------------------------
+        if (message.type === "IFRAME_THREAT_DETECTED") {
+            console.warn("PHISHGUARD: Malicious iframe detected");
+        }
+
     } catch (globalError) {
-        // This catches logic errors (e.g., trying to access a property of null)
-        console.error("PHISHGUARD: Global Service Worker Exception:", globalError);
-        sendResponse({ action: "ERROR", reasons: ["Internal Extension Error"] });
+
+        console.error("PHISHGUARD: Global Exception:", globalError);
+
+        const fallback = {
+            action: "ERROR",
+            prediction: "offline",
+            confidence: 0,
+            reasons: ["Internal extension error"]
+        };
+
+        sendResponse(fallback);
         return false;
     }
 });
