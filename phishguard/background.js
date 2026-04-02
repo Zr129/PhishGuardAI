@@ -63,7 +63,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             })
 
             // -------------------------------
-            // ERROR HANDLING (CRITICAL FIX)
+            // ERROR HANDLING 
             // -------------------------------
             .catch(fetchError => {
                 clearTimeout(timeout);
@@ -84,7 +84,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     reasons: [errorMsg]
                 };
 
-                // ✅ THIS FIXES YOUR UI STUCK ISSUE
                 chrome.storage.local.set({
                     analysisResult: {
                         url: pageData.url,
@@ -101,7 +100,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         // -------------------------------
-        // IFRAME ALERT (OPTIONAL)
+        // IFRAME ALERT
         // -------------------------------
         if (message.type === "IFRAME_THREAT_DETECTED") {
             console.warn("PHISHGUARD: Malicious iframe detected");
