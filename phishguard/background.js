@@ -1,123 +1,150 @@
-console.log("PHISHGUARD: BACKGROUND SERVICE WORKER BOOTED");
+/**
+ * background.js — PhishGuard Service Worker
+ *
+ * Three classes, three responsibilities:
+ *   APIClient      — handles all fetch communication with the backend
+ *   ResultStore    — manages chrome.storage read/write
+ *   MessageHandler — listens for extension messages, delegates to the above
+ */
 
-const API_URL = "http://127.0.0.1:8000/analyse";
+"use strict";
 
-// ===============================
-// MAIN MESSAGE HANDLER
-// ===============================
+// ─────────────────────────────────────────
+// APIClient
+// SRP: only knows how to call the backend
+// ─────────────────────────────────────────
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    try {
-        console.log("PHISHGUARD: Message received →", message.type);
+class APIClient {
+    static API_URL    = "http://127.0.0.1:8000/analyse";
+    static TIMEOUT_MS = 3000;
 
-        // -------------------------------
-        // ANALYSIS REQUEST
-        // -------------------------------
-        if (message.type === "ANALYZE_PAGE") {
+    async analyse(pageData) {
+        const controller = new AbortController();
+        const timeout    = setTimeout(() => controller.abort(), APIClient.TIMEOUT_MS);
 
-            const pageData = message.data;
-
-            // Validate payload
-            if (!pageData || !pageData.url || !pageData.domain) {
-                throw new Error("Invalid payload structure");
-            }
-
-            // Timeout controller (3s)
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 3000);
-
-            fetch(API_URL, {
-                method: "POST",
+        try {
+            const response = await fetch(APIClient.API_URL, {
+                method:  "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(pageData),
-                signal: controller.signal
-            })
-
-            // -------------------------------
-            // SUCCESS RESPONSE
-            // -------------------------------
-            .then(response => {
-                clearTimeout(timeout);
-
-                if (!response.ok) {
-                    throw new Error(`Server responded with ${response.status}`);
-                }
-
-                return response.json();
-            })
-
-            .then(apiResponse => {
-
-                console.log("PHISHGUARD RESULT:", apiResponse);
-
-                // ✅ ALWAYS SAVE RESULT
-                chrome.storage.local.set({
-                    analysisResult: {
-                        url: pageData.url,
-                        data: apiResponse,
-                        timestamp: Date.now()
-                    }
-                });
-
-                sendResponse(apiResponse);
-            })
-
-            // -------------------------------
-            // ERROR HANDLING 
-            // -------------------------------
-            .catch(fetchError => {
-                clearTimeout(timeout);
-
-                let errorMsg = "Backend unavailable";
-
-                if (fetchError.name === "AbortError") {
-                    console.error("PHISHGUARD: Request timed out");
-                    errorMsg = "Request timed out";
-                } else {
-                    console.error("PHISHGUARD: Fetch/API Error:", fetchError.message);
-                }
-
-                const fallback = {
-                    action: "ERROR",
-                    prediction: "offline",
-                    confidence: 0,
-                    reasons: [errorMsg]
-                };
-
-                chrome.storage.local.set({
-                    analysisResult: {
-                        url: pageData.url,
-                        data: fallback,
-                        timestamp: Date.now()
-                    }
-                });
-
-                sendResponse(fallback);
+                body:    JSON.stringify(pageData),
+                signal:  controller.signal,
             });
 
-            // Required for async response
-            return true;
+            clearTimeout(timeout);
+
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}`);
+            }
+
+            return await response.json();
+
+        } catch (err) {
+            clearTimeout(timeout);
+            const reason = err.name === "AbortError" ? "Request timed out" : "Backend unavailable";
+            console.error("PHISHGUARD [APIClient]:", err.message);
+            throw new Error(reason);
         }
+    }
+}
 
-        // -------------------------------
-        // IFRAME ALERT
-        // -------------------------------
-        if (message.type === "IFRAME_THREAT_DETECTED") {
-            console.warn("PHISHGUARD: Malicious iframe detected");
-        }
 
-    } catch (globalError) {
+// ─────────────────────────────────────────
+// ResultStore
+// SRP: only knows how to persist/retrieve results
+// ─────────────────────────────────────────
 
-        console.error("PHISHGUARD: Global Exception:", globalError);
+class ResultStore {
+    save(url, data) {
+        chrome.storage.local.set({
+            analysisResult: { url, data, timestamp: Date.now() }
+        });
+    }
 
-        const fallback = {
-            action: "ERROR",
+    saveError(url, reason) {
+        this.save(url, {
+            action:     "ERROR",
             prediction: "offline",
             confidence: 0,
-            reasons: ["Internal extension error"]
-        };
-
-        sendResponse(fallback);
-        return false;
+            reasons:    [reason],
+        });
     }
-});
+}
+
+
+// ─────────────────────────────────────────
+// MessageHandler
+// Orchestrator: routes messages to APIClient + ResultStore
+// OCP: new message types can be added without touching existing handlers
+// ─────────────────────────────────────────
+
+class MessageHandler {
+    constructor(apiClient, store) {
+        this._api   = apiClient;
+        this._store = store;
+    }
+
+    listen() {
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            const handler = this._getHandler(message.type);
+
+            if (!handler) {
+                console.warn("PHISHGUARD: Unknown message type:", message.type);
+                return false;
+            }
+
+            handler(message, sendResponse);
+            return true; // keep channel open for async response
+        });
+    }
+
+    _getHandler(type) {
+        const handlers = {
+            ANALYZE_PAGE:          this._handleAnalysis.bind(this),
+            IFRAME_THREAT_DETECTED: this._handleIframeThreat.bind(this),
+        };
+        return handlers[type] || null;
+    }
+
+    async _handleAnalysis(message, sendResponse) {
+        const pageData = message.data;
+
+        if (!pageData?.url || !pageData?.domain) {
+            console.error("PHISHGUARD: Invalid payload");
+            const fallback = { action: "ERROR", prediction: "offline", confidence: 0, reasons: ["Invalid payload"] };
+            this._store.save(pageData?.url || "", fallback);
+            sendResponse(fallback);
+            return;
+        }
+
+        try {
+            const result = await this._api.analyse(pageData);
+            console.log("PHISHGUARD RESULT:", result);
+            this._store.save(pageData.url, result);
+            sendResponse(result);
+        } catch (err) {
+            console.error("PHISHGUARD [MessageHandler]:", err.message);
+            this._store.saveError(pageData.url, err.message);
+            sendResponse({
+                action:     "ERROR",
+                prediction: "offline",
+                confidence: 0,
+                reasons:    [err.message],
+            });
+        }
+    }
+
+    _handleIframeThreat(message, sendResponse) {
+        console.warn("PHISHGUARD: Malicious iframe signal received");
+        sendResponse({ received: true });
+    }
+}
+
+
+// ─────────────────────────────────────────
+// Entry point
+// ─────────────────────────────────────────
+
+console.log("PHISHGUARD: Background service worker booted");
+
+const handler = new MessageHandler(new APIClient(), new ResultStore());
+handler.listen();

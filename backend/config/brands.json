@@ -1,0 +1,19 @@
+{
+    "paypal":       ["paypal.com", "paypal-corp.com"],
+    "amazon":       ["amazon.com", "amazon.co.uk", "amazon.de", "amazon.fr", "aws.amazon.com"],
+    "microsoft":    ["microsoft.com", "live.com", "outlook.com", "office.com", "microsoft365.com", "azure.com"],
+    "google":       ["google.com", "gmail.com", "youtube.com", "google.co.uk"],
+    "netflix":      ["netflix.com"],
+    "apple":        ["apple.com", "icloud.com"],
+    "facebook":     ["facebook.com", "fb.com", "messenger.com"],
+    "instagram":    ["instagram.com"],
+    "twitter":      ["twitter.com", "x.com"],
+    "linkedin":     ["linkedin.com"],
+    "dropbox":      ["dropbox.com"],
+    "steam":        ["steampowered.com", "steamcommunity.com"],
+    "ebay":         ["ebay.com", "ebay.co.uk"],
+    "hsbc":         ["hsbc.com", "hsbc.co.uk"],
+    "barclays":     ["barclays.com", "barclays.co.uk"],
+    "lloyds":       ["lloyds.com", "lloydsbankinggroup.com"],
+    "paloalto":     ["paloaltonetworks.com"]
+}

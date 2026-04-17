@@ -1,31 +1,42 @@
-from fastapi import APIRouter, HTTPException
-from models.models import URLRequest
+"""
+HTTP controller — thin layer between FastAPI and the service.
+
+Accepts URLAnalyser via build_router() factory so it has
+no direct import of service internals (DIP at the HTTP layer).
+"""
+
+import logging
 import traceback
+
+from fastapi import APIRouter, HTTPException, Request
+from slowapi import Limiter
+
+from models.models import URLRequest, AnalysisResult
 from services.url_analysis import URLAnalyser
 
-
-router = APIRouter()
-analyser = URLAnalyser()
-
-@router.post("/analyse")
-def analyse_url_endpoint(request: URLRequest):
+logger = logging.getLogger("PhishGuard")
 
 
-    print("Received features:")
-    print(request)
-    try:
-        result = analyser.analyse(request)
-        print(f"Result: {result['action']} | Reasons: {result['reasons']}")
+def build_router(analyser: URLAnalyser, limiter: Limiter) -> APIRouter:
+    """
+    Factory function that returns a configured APIRouter.
+    Binds the injected analyser into the route handler via closure.
+    """
+    router = APIRouter()
 
-        return {
-            "url": request.url,
-            "action": result["action"],
-            "prediction": result["prediction"],
-            "confidence": result["confidence"],
-            "reasons": result["reasons"]
-        }
+    @router.post("/analyse", response_model=AnalysisResult)
+    @limiter.limit("60/minute")
+    def analyse_url_endpoint(request: Request, body: URLRequest):
+        logger.info(f"[REQUEST] {body.url}")
 
-    except Exception as e:
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-    
+        try:
+            result: AnalysisResult = analyser.analyse(body)
+            logger.info(f"[RESULT] action={result.action} confidence={result.confidence}")
+
+            return result
+
+        except Exception as e:
+            logger.error(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+    return router
