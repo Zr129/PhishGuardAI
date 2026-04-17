@@ -1,22 +1,20 @@
 /**
  * popup.js — PhishGuard Popup
  *
- * Three classes, three responsibilities:
- *   ThemeManager    — dark/light mode persistence and toggling
- *   SeverityClassifier — maps a reason string to a severity level
- *   PopupRenderer   — reads storage and updates every DOM element
+ * ThemeManager       — dark/light mode
+ * SeverityClassifier — maps reason + tier to CSS class and icon
+ * PopupRenderer      — reads storage, updates all DOM elements
  */
 
 "use strict";
 
-// ─────────────────────────────────────────
-// ThemeManager
-// SRP: only knows about theme state
-// ─────────────────────────────────────────
+const MAX_FLAGS_DEFAULT = 3;
+
+// ── ThemeManager ──────────────────────────────────────────────────────
 
 class ThemeManager {
-    constructor(toggleBtnId = "theme-toggle") {
-        this._btn = document.getElementById(toggleBtnId);
+    constructor(btnId = "theme-toggle") {
+        this._btn = document.getElementById(btnId);
     }
 
     load() {
@@ -37,121 +35,247 @@ class ThemeManager {
     }
 
     _apply(theme) {
-        const isDark = theme === "dark";
-        document.body.classList.toggle("dark", isDark);
-        if (this._btn) this._btn.innerText = isDark ? "☀️" : "🌙";
+        const dark = theme === "dark";
+        document.body.classList.toggle("dark", dark);
+        if (this._btn) this._btn.textContent = dark ? "☀️" : "🌙";
     }
 }
 
 
-// ─────────────────────────────────────────
-// SeverityClassifier
-// SRP: only knows how to classify a reason string
-// OCP: add new keywords here without touching renderer
-// ─────────────────────────────────────────
+// ── SeverityClassifier ────────────────────────────────────────────────
 
 class SeverityClassifier {
-    static HIGH_KEYWORDS   = ["password", "blacklist", "impersonation", "harvesting", "credential"];
-    static MEDIUM_KEYWORDS = ["external", "ratio", "subdomain", "cloaked", "redirect", "iframe"];
+    // Maps tier name → CSS class and icon
+    static TIER_MAP = {
+        "RULE":      { cls: "rule",      icon: "🚫", label: "Rule" },
+        "HEURISTIC": { cls: "heuristic", icon: "⚠️", label: "Heuristic" },
+        "ML":        { cls: "ml",        icon: "🤖", label: "ML" },
+    };
 
-    classify(reason) {
-        const r = reason.toLowerCase();
-        if (SeverityClassifier.HIGH_KEYWORDS.some(k => r.includes(k)))   return "high";
-        if (SeverityClassifier.MEDIUM_KEYWORDS.some(k => r.includes(k))) return "medium";
-        return "low";
+    forTier(tier) {
+        return SeverityClassifier.TIER_MAP[tier] || { cls: "info", icon: "ℹ️", label: "" };
     }
 }
 
 
-// ─────────────────────────────────────────
-// PopupRenderer
-// SRP: only knows how to update the popup DOM
-// Depends on SeverityClassifier via constructor (DIP)
-// ─────────────────────────────────────────
+// ── PopupRenderer ─────────────────────────────────────────────────────
 
 class PopupRenderer {
     constructor(classifier) {
         this._classifier = classifier;
+        this._showAll    = false;
 
-        // Cache DOM refs once
         this._els = {
-            status:     document.getElementById("status"),
-            confidence: document.getElementById("confidence"),
-            reasons:    document.getElementById("reasons"),
-            domain:     document.getElementById("current-domain"),
-            fill:       document.getElementById("confidence-fill"),
+            status:    document.getElementById("status"),
+            domain:    document.getElementById("current-domain"),
+            barFill:   document.getElementById("bar-fill"),
+            barLabel:  document.getElementById("bar-label"),
+            ringFill:  document.getElementById("ring-fill"),
+            riskPct:   document.getElementById("risk-pct"),
+            flags:     document.getElementById("flags"),
+            flagCount: document.getElementById("flag-count"),
+            showMore:  document.getElementById("show-more"),
+            timeEl:    document.getElementById("analysis-time"),
+            shield:    document.getElementById("shield-icon"),
         };
+
+        // Bind show-more toggle
+        if (this._els.showMore) {
+            this._els.showMore.onclick = () => {
+                this._showAll = !this._showAll;
+                this._els.showMore.textContent = this._showAll ? "Show fewer" : "Show all flags";
+                this.render();
+            };
+        }
     }
 
     render() {
         chrome.storage.local.get("analysisResult", res => {
             const wrapper = res.analysisResult;
+            if (!wrapper?.data) { this._renderLoading(); return; }
 
-            if (!wrapper?.data) {
-                this._renderLoading();
-                return;
-            }
-
-            const { data, url } = wrapper;
-
+            const { data, url, timestamp } = wrapper;
             if (data.prediction === "offline" || data.prediction === "error") {
                 this._renderOffline();
                 return;
             }
 
-            this._renderResult(data, url);
+            this._renderResult(data, url, timestamp);
         });
     }
 
-    // ── States ──────────────────────────
+    // ── States ──────────────────────────────────────────────────────
 
     _renderLoading() {
-        this._setStatus("ANALYSING...", "idle");
-        this._setText("confidence", "Scanning website...");
-        this._setBar(10, "#95a5a6");
-        this._setHTML("reasons", `<div class="safe-box">🔍 Running analysis...</div>`);
+        this._setStatus("IDLE", "idle");
+        this._setDomain("Analysing...");
+        this._setBar(0, null);
+        this._setRing(0, null);
+        this._setText("riskPct", "—");
+        this._setText("barLabel", "Scanning...");
+        this._setText("flagCount", "");
+        this._setHTML("flags", `<div class="safe-msg">🔍 Running analysis...</div>`);
+        this._els.showMore && (this._els.showMore.style.display = "none");
     }
 
     _renderOffline() {
         this._setStatus("OFFLINE", "idle");
-        this._setText("confidence", "Backend unavailable");
-        this._setBar(0, "#95a5a6");
-        this._setHTML("reasons", `<div class="safe-box">⚠️ Backend not connected</div>`);
+        this._setDomain("—");
+        this._setBar(0, null);
+        this._setRing(0, null);
+        this._setText("riskPct", "—");
+        this._setText("barLabel", "Backend unavailable");
+        this._setText("flagCount", "");
+        this._setHTML("flags", `<div class="offline-msg">⚡ Start the backend server to enable protection</div>`);
+        this._els.showMore && (this._els.showMore.style.display = "none");
     }
 
-    _renderResult(data, url) {
-        const confidence = Math.round(data.confidence); // backend returns 0–95 integer already
-        const reasons    = data.reasons || [];
+    _renderResult(data, url, timestamp) {
+        const confidence     = Math.round(data.confidence);
+        const taggedReasons  = data.tagged_reasons || [];
+        const allReasons     = data.reasons || [];
+        const action         = data.action.toLowerCase();
+        const flagCount      = allReasons.length;
 
-        this._renderDomain(url);
-        this._setStatus(data.prediction.toUpperCase(), data.action.toLowerCase());
-        this._setText("confidence", `Risk: ${confidence}% • ${reasons.length} flag${reasons.length === 1 ? "" : "s"}`);
-        this._renderBar(confidence);
-        this._renderReasons(reasons, confidence);
-    }
+        // Domain
+        this._setDomain(this._extractDomain(url));
 
-    // ── DOM helpers ─────────────────────
+        // Status pill
+        this._setStatus(data.prediction.toUpperCase(), action);
 
-    _renderDomain(url) {
-        const el = this._els.domain;
-        if (!el) return;
-        try {
-            el.innerText = new URL(url).hostname.replace("www.", "");
-        } catch {
-            el.innerText = "Unknown Site";
+        // Shield icon animation on action change
+        if (this._els.shield) {
+            this._els.shield.textContent = action === "block" ? "🚨"
+                                         : action === "warn"  ? "⚠️"
+                                         : "🛡️";
         }
+
+        // Risk bar + ring
+        const colour = this._riskColour(confidence);
+        this._setBar(confidence, colour);
+        this._setRing(confidence, colour);
+        this._setText("riskPct", `${confidence}%`);
+        this._setText("barLabel", `Risk: ${confidence}% · ${flagCount} flag${flagCount === 1 ? "" : "s"}`);
+
+        // Timestamp
+        if (this._els.timeEl && timestamp) {
+            const mins = Math.round((Date.now() - timestamp) / 60000);
+            this._els.timeEl.textContent = mins < 1 ? "just now" : `${mins}m ago`;
+        }
+
+        // Flags
+        this._renderFlags(taggedReasons, allReasons, confidence);
+    }
+
+    // ── Flags ────────────────────────────────────────────────────────
+
+    _renderFlags(taggedReasons, allReasons, confidence) {
+        const el = this._els.flags;
+        if (!el) return;
+
+        el.innerHTML = "";
+
+        // Build display list — prefer tagged reasons, fall back to plain strings
+        const items = taggedReasons.length > 0
+            ? taggedReasons
+            : allReasons.map(r => ({ text: r, tier: "HEURISTIC" }));
+
+        if (items.length === 0) {
+            el.innerHTML = confidence > 0
+                ? `<div class="flag info"><span class="flag-icon">ℹ️</span><span class="flag-text">Minor signals detected</span></div>`
+                : `<div class="safe-msg">✓ No threats detected — this page appears secure.</div>`;
+            this._els.showMore && (this._els.showMore.style.display = "none");
+            this._setText("flagCount", "");
+            return;
+        }
+
+        // Sort: RULE first, then HEURISTIC, then ML
+        const order = { RULE: 0, HEURISTIC: 1, ML: 2 };
+        const sorted = [...items].sort((a, b) =>
+            (order[a.tier] ?? 9) - (order[b.tier] ?? 9)
+        );
+
+        const limit   = this._showAll ? sorted.length : MAX_FLAGS_DEFAULT;
+        const visible = sorted.slice(0, limit);
+
+        visible.forEach(item => {
+            el.appendChild(this._buildFlag(item.text, item.tier));
+        });
+
+        // Show-more button
+        const hasMore = sorted.length > MAX_FLAGS_DEFAULT;
+        if (this._els.showMore) {
+            this._els.showMore.style.display = hasMore ? "block" : "none";
+            if (!this._showAll && hasMore) {
+                this._els.showMore.textContent = `Show all ${sorted.length} flags`;
+            }
+        }
+
+        this._setText("flagCount", `${sorted.length} flag${sorted.length === 1 ? "" : "s"}`);
+    }
+
+    _buildFlag(text, tier) {
+        const meta = this._classifier.forTier(tier);
+
+        const flag  = document.createElement("div");
+        flag.className = `flag ${meta.cls}`;
+
+        const icon  = document.createElement("span");
+        icon.className   = "flag-icon";
+        icon.textContent = meta.icon;
+
+        const body  = document.createElement("div");
+        body.className = "flag-body";
+
+        const label = document.createElement("span");
+        label.className   = "flag-text";
+        label.textContent = text;
+
+        body.appendChild(label);
+
+        // Show tier badge only if there's a meaningful label
+        if (meta.label) {
+            const badge = document.createElement("span");
+            badge.className   = "flag-badge";
+            badge.textContent = meta.label;
+            body.appendChild(badge);
+        }
+
+        flag.append(icon, body);
+        return flag;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────
+
+    _extractDomain(url) {
+        try {
+            return new URL(url).hostname.replace("www.", "") || "Unknown site";
+        } catch {
+            return "Unknown site";
+        }
+    }
+
+    _riskColour(confidence) {
+        if (confidence < 20) return "var(--safe)";
+        if (confidence < 50) return "var(--warn)";
+        return "var(--danger)";
+    }
+
+    _setDomain(text) {
+        const el = this._els.domain;
+        if (el) el.textContent = text;
     }
 
     _setStatus(text, cssClass) {
         const el = this._els.status;
         if (!el) return;
-        el.innerText   = text;
-        el.className   = `status-pill ${cssClass}`;
+        el.textContent = text;
+        el.className   = `pill ${cssClass}`;
     }
 
     _setText(key, text) {
         const el = this._els[key];
-        if (el) el.innerText = text;
+        if (el) el.textContent = text;
     }
 
     _setHTML(key, html) {
@@ -159,49 +283,25 @@ class PopupRenderer {
         if (el) el.innerHTML = html;
     }
 
-    _setBar(widthPct, colour) {
-        const el = this._els.fill;
+    _setBar(pct, colour) {
+        const el = this._els.barFill;
         if (!el) return;
-        el.style.width      = `${widthPct}%`;
-        el.style.background = colour;
+        el.style.width      = `${pct}%`;
+        el.style.background = colour || "var(--border)";
     }
 
-    _renderBar(confidence) {
-        const colour = confidence < 35 ? "#27ae60"
-                     : confidence < 75 ? "#f39c12"
-                     : "#e74c3c";
-        const el = this._els.fill;
+    _setRing(pct, colour) {
+        const el = this._els.ringFill;
         if (!el) return;
-        el.style.transition = "width 0.5s ease";
-        this._setBar(confidence, colour);
-    }
-
-    _renderReasons(reasons, confidence) {
-        const el = this._els.reasons;
-        if (!el) return;
-
-        el.innerHTML = "";
-
-        if (reasons.length > 0) {
-            reasons.forEach(reason => {
-                const div       = document.createElement("div");
-                div.className   = `reason ${this._classifier.classify(reason)}`;
-                div.textContent = reason;
-                el.appendChild(div);
-            });
-            return;
-        }
-
-        el.innerHTML = confidence > 0
-            ? `<div class="reason low">Minor risk indicators detected (low confidence)</div>`
-            : `<div class="safe-box">✓ No threats detected. This page appears secure.</div>`;
+        // SVG circumference for r=15.9 is ~99.9 ≈ 100
+        const dash = (pct / 100) * 100;
+        el.setAttribute("stroke-dasharray", `${dash} ${100 - dash}`);
+        el.style.stroke = colour || "var(--border)";
     }
 }
 
 
-// ─────────────────────────────────────────
-// Entry point
-// ─────────────────────────────────────────
+// ── Entry point ───────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
     const theme    = new ThemeManager();
@@ -211,7 +311,6 @@ document.addEventListener("DOMContentLoaded", () => {
     theme.bindToggle();
     renderer.render();
 
-    // Re-render only when analysis data changes (not theme changes)
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === "local" && changes.analysisResult?.newValue) {
             renderer.render();

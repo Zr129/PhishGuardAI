@@ -1,50 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="popup.css">
 </head>
-
 <body>
-<div class="app-container">
+<div class="app">
 
-    <!-- HEADER -->
     <header class="header">
         <div class="brand">
-            <span class="shield-icon">🛡️</span>
-            <h1 class="title">PhishGuard</h1>
+            <span class="shield" id="shield-icon">🛡️</span>
+            <span class="brand-name">PhishGuard</span>
         </div>
-
         <div class="header-right">
-            <button id="theme-toggle" class="theme-btn">🌙</button>
-            <div id="status" class="status-pill idle">IDLE</div>
+            <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">🌙</button>
+            <div id="status" class="pill idle">IDLE</div>
         </div>
     </header>
 
-    <!-- SITE -->
-    <section class="site-info">
-        <p class="label">Current Website</p>
-        <h2 id="current-domain">Analyzing...</h2>
-
-        <div class="confidence-bar-container">
-            <div id="confidence-fill" class="confidence-fill"></div>
+    <section class="site-card">
+        <div class="site-row">
+            <div>
+                <p class="eyebrow">Current website</p>
+                <p class="domain" id="current-domain">Analysing...</p>
+            </div>
+            <div class="risk-badge-wrap">
+                <svg class="risk-ring" viewBox="0 0 36 36" id="risk-ring">
+                    <circle class="ring-bg" cx="18" cy="18" r="15.9"/>
+                    <circle class="ring-fill" id="ring-fill" cx="18" cy="18" r="15.9"
+                            stroke-dasharray="0 100" stroke-dashoffset="25"/>
+                </svg>
+                <span class="risk-pct" id="risk-pct">—</span>
+            </div>
         </div>
-
-        <span id="confidence" class="confidence-text">Risk: 0%</span>
+        <div class="bar-wrap">
+            <div class="bar-track">
+                <div class="bar-fill" id="bar-fill"></div>
+            </div>
+            <span class="bar-label" id="bar-label">Scanning...</span>
+        </div>
     </section>
 
-    <!-- ALWAYS VISIBLE REASONS -->
-    <section class="analysis-section">
-        <p class="label">Security Report</p>
-        <div id="reasons" class="reasons-list"></div>
+    <section class="flags-section">
+        <div class="section-header">
+            <span class="eyebrow">Security flags</span>
+            <span class="flag-count" id="flag-count"></span>
+        </div>
+        <div id="flags" class="flags-list"></div>
+        <button class="show-more" id="show-more" style="display:none">Show all flags</button>
     </section>
 
     <footer class="footer">
-        <p>Real-time protection active</p>
+        <span id="analysis-time"></span>
+        <span>Real-time protection active</span>
     </footer>
 
 </div>
-
 <script src="popup.js"></script>
 </body>
 </html>

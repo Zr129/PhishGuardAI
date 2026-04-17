@@ -13,6 +13,5 @@ __all__ = [
     "BaseCheck", "CheckResult",
     "BlacklistCheck", "IPAddressCheck", "IFrameTrapCheck",
     "InsecurePasswordCheck", "BrandImpersonationCheck",
-    "HeuristicCheck",
-    "MLCheck",
+    "HeuristicCheck", "MLCheck",
 ]

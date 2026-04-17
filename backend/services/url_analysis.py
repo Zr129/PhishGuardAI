@@ -7,8 +7,9 @@ Responsibilities:
   - Decide BLOCK / WARN / ALLOW
   - Return a typed AnalysisResult
 
-It owns NO config loading, NO file I/O, and NO rule logic.
-All of those live in their own classes (DIP + SRP).
+FIX: ALLOW no longer silently discards brand warning reasons.
+FIX: ML score is weighted (0.6x) before adding to heuristic score
+     to prevent the two differently-scaled systems from over-adding.
 """
 
 import logging
@@ -22,48 +23,27 @@ from utils.url_features import URLFeatureExtractor
 logger = logging.getLogger("PhishGuard")
 logging.basicConfig(level=logging.INFO)
 
+# ML score weight — prevents raw ML probability score from dominating
+# heuristic scores which use a different scale
+ML_SCORE_WEIGHT = 0.6
 
-# -------------------------------------------------------
-# Confidence scoring
-# -------------------------------------------------------
 
 def sigmoid_confidence(score: float, max_score: float = 14.0) -> int:
     """Sigmoid curve: maps raw score → calibrated 0–95% confidence."""
     normalised = (score / max_score) * 10 - 5
-    prob = 1 / (1 + math.exp(-normalised))
+    prob       = 1 / (1 + math.exp(-normalised))
     return min(round(prob * 100), 95)
 
-
-# -------------------------------------------------------
-# URLAnalyser
-# -------------------------------------------------------
 
 class URLAnalyser:
     """
     Orchestrates the phishing detection pipeline.
-
-    Constructor accepts all dependencies — nothing is
-    instantiated internally (Dependency Inversion Principle).
-
-    Args:
-        checks:    Ordered list of BaseCheck instances.
-                   Tier 1 checks first (hard rules),
-                   Tier 2 next (heuristics),
-                   Tier 3 last (ML — optional).
-        extractor: URLFeatureExtractor instance.
+    All dependencies injected via constructor (DIP).
     """
 
-    def __init__(
-        self,
-        checks: List[BaseCheck],
-        extractor: URLFeatureExtractor,
-    ):
-        self._checks = checks
+    def __init__(self, checks: List[BaseCheck], extractor: URLFeatureExtractor):
+        self._checks    = checks
         self._extractor = extractor
-
-    # --------------------------------------------------
-    # Public API
-    # --------------------------------------------------
 
     def analyse(self, data: URLRequest) -> AnalysisResult:
         logger.info("========== NEW ANALYSIS ==========")
@@ -72,8 +52,9 @@ class URLAnalyser:
         refined = self._extractor.extract(data.url, data.links)
         logger.info(f"[DOMAIN] {refined.get('registered_domain', '')}")
 
-        cumulative_score = 0
+        cumulative_score   = 0.0
         cumulative_reasons: List[str] = []
+        tagged_reasons:     List[dict] = []   # [{text, tier}]
 
         for check in self._checks:
             result: CheckResult = check.run(data, refined)
@@ -81,37 +62,45 @@ class URLAnalyser:
             if not result.triggered:
                 continue
 
-            cumulative_score += result.score
-            cumulative_reasons.extend(result.reasons)
+            # Apply weighting to ML scores to prevent scale mismatch
+            weight = ML_SCORE_WEIGHT if result.tier == "ML" else 1.0
+            cumulative_score += result.score * weight
 
-            # Hard block — stop pipeline immediately
+            for reason in result.reasons:
+                cumulative_reasons.append(reason)
+                tagged_reasons.append({"text": reason, "tier": result.tier or "RULE"})
+
             if result.is_block:
                 logger.info(f"[BLOCK] {check.__class__.__name__}")
-                return self._make_result("BLOCK", "phishing", cumulative_score, cumulative_reasons)
+                return self._make_result(
+                    "BLOCK", "phishing",
+                    cumulative_score, cumulative_reasons, tagged_reasons
+                )
 
-        logger.info(f"[SCORE] {cumulative_score}")
+        score = round(cumulative_score)
+        logger.info(f"[SCORE] {score}")
 
-        # Threshold decision
-        if cumulative_score >= 7:
+        # FIX: ALLOW passes through any warning reasons (e.g. brand warnings)
+        # rather than silently discarding them with an empty list
+        if score >= 9:
             logger.info("[DECISION] BLOCK")
-            return self._make_result("BLOCK", "phishing", cumulative_score, cumulative_reasons)
+            return self._make_result("BLOCK", "phishing", score, cumulative_reasons, tagged_reasons)
 
-        if cumulative_score >= 3:
+        if score >= 5:
             logger.info("[DECISION] WARN")
-            return self._make_result("WARN", "suspicious", cumulative_score, cumulative_reasons)
+            return self._make_result("WARN", "suspicious", score, cumulative_reasons, tagged_reasons)
 
         logger.info("[DECISION] ALLOW")
-        return self._make_result("ALLOW", "safe", cumulative_score, [])
-
-    # --------------------------------------------------
-    # Private helpers
-    # --------------------------------------------------
+        # Pass through any informational reasons (e.g. brand warnings) even on ALLOW
+        info_reasons = [r for r in cumulative_reasons if r]
+        return self._make_result("ALLOW", "safe", score, info_reasons, tagged_reasons)
 
     @staticmethod
-    def _make_result(action, prediction, score, reasons) -> AnalysisResult:
+    def _make_result(action, prediction, score, reasons, tagged_reasons=None) -> AnalysisResult:
         return AnalysisResult(
             action=action,
             prediction=prediction,
             confidence=sigmoid_confidence(score),
             reasons=reasons,
+            tagged_reasons=tagged_reasons or [],
         )

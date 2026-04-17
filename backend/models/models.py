@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 
 class PageMeta(BaseModel):
@@ -8,7 +8,6 @@ class PageMeta(BaseModel):
     title:         str
     is_https:      bool
     is_main_frame: bool
-    # PhiUSIIL-aligned
     is_responsive:            Optional[bool]  = False
     has_favicon:              Optional[bool]  = False
     has_robots:               Optional[bool]  = False
@@ -45,12 +44,7 @@ class ContentSignals(BaseModel):
 
 
 class URLRequest(PageMeta, FormContext, LinkContext, ContentSignals):
-    """
-    Full request from the extension.
-    Flat JSON for API compatibility; logically split across sub-models (ISP).
-    Extra fields sent by content.js (has_ip, subdomain_count, has_domain_dashes)
-    are silently ignored by FastAPI — the backend recomputes them from the URL.
-    """
+    """Full request from the extension. extra=ignore drops unknown fields safely."""
 
     @field_validator("url")
     @classmethod
@@ -62,19 +56,21 @@ class URLRequest(PageMeta, FormContext, LinkContext, ContentSignals):
     @field_validator("links")
     @classmethod
     def validate_links(cls, v: List[str]) -> List[str]:
-        # Truncate oversized links, drop anything that isn't a string
         return [
             link[:1000] if isinstance(link, str) else ""
-            for link in v[:500]   # cap at 500 links max
+            for link in v[:500]
             if isinstance(link, str)
         ]
 
     class Config:
-        extra = "ignore"   # silently drop unknown fields (has_ip, subdomain_count etc.)
+        extra = "ignore"
 
 
 class AnalysisResult(BaseModel):
-    action:     str
-    prediction: str
-    confidence: int
-    reasons:    List[str]
+    action:         str
+    prediction:     str
+    confidence:     int
+    reasons:        List[str]
+    tagged_reasons: List[Dict[str, Any]] = Field(default_factory=list)
+    # tagged_reasons: [{text: str, tier: "RULE"|"HEURISTIC"|"ML"}]
+    # Allows the popup to show tier badges per reason
