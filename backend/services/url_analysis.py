@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 
 # ML score weight — prevents raw ML probability score from dominating
 # heuristic scores which use a different scale
-ML_SCORE_WEIGHT = 0.6
+ML_SCORE_WEIGHT = 0.65
 
 
 def sigmoid_confidence(score: float, max_score: float = 14.0) -> int:
@@ -70,6 +70,13 @@ class URLAnalyser:
                 cumulative_reasons.append(reason)
                 tagged_reasons.append({"text": reason, "tier": result.tier or "RULE"})
 
+            # Whitelist short-circuit — score of -99 means instant ALLOW
+            if result.score == -99:
+                logger.info(f"[ALLOW] WhitelistCheck — trusted domain")
+                return self._make_result(
+                    "ALLOW", "safe", 0, result.reasons, tagged_reasons
+                )
+
             if result.is_block:
                 logger.info(f"[BLOCK] {check.__class__.__name__}")
                 return self._make_result(
@@ -80,8 +87,6 @@ class URLAnalyser:
         score = round(cumulative_score)
         logger.info(f"[SCORE] {score}")
 
-        # FIX: ALLOW passes through any warning reasons (e.g. brand warnings)
-        # rather than silently discarding them with an empty list
         if score >= 9:
             logger.info("[DECISION] BLOCK")
             return self._make_result("BLOCK", "phishing", score, cumulative_reasons, tagged_reasons)

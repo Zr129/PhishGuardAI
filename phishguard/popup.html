@@ -7,53 +7,180 @@
 <body>
 <div class="app">
 
-    <header class="header">
-        <div class="brand">
-            <span class="shield" id="shield-icon">🛡️</span>
-            <span class="brand-name">PhishGuard</span>
-        </div>
-        <div class="header-right">
-            <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">🌙</button>
-            <div id="status" class="pill idle">IDLE</div>
-        </div>
-    </header>
+    <!-- ── Main view ──────────────────────────────────────── -->
+    <div id="view-main">
 
-    <section class="site-card">
-        <div class="site-row">
-            <div>
-                <p class="eyebrow">Current website</p>
-                <p class="domain" id="current-domain">Analysing...</p>
-            </div>
-            <div class="risk-badge-wrap">
-                <svg class="risk-ring" viewBox="0 0 36 36" id="risk-ring">
-                    <circle class="ring-bg" cx="18" cy="18" r="15.9"/>
-                    <circle class="ring-fill" id="ring-fill" cx="18" cy="18" r="15.9"
-                            stroke-dasharray="0 100" stroke-dashoffset="25"/>
+        <header class="header">
+            <div class="brand">
+                <svg id="shield-icon" class="brand-shield" viewBox="0 0 20 20" fill="none">
+                    <path d="M10 2L3 5v5c0 4.418 3.134 8.545 7 9.5C13.866 18.545 17 14.418 17 10V5L10 2z"
+                          fill="currentColor" opacity="0.18"/>
+                    <path d="M10 2L3 5v5c0 4.418 3.134 8.545 7 9.5C13.866 18.545 17 14.418 17 10V5L10 2z"
+                          stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                    <path d="M7 10l2 2 4-4" stroke="currentColor" stroke-width="1.4"
+                          stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <span class="risk-pct" id="risk-pct">—</span>
+                <span class="brand-name">PhishGuard</span>
+            </div>
+            <div class="header-right">
+                <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">
+                    <svg id="icon-sun" class="btn-icon" viewBox="0 0 20 20" fill="none" style="display:none">
+                        <circle cx="10" cy="10" r="3.5" stroke="currentColor" stroke-width="1.4"/>
+                        <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42"
+                              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                    <svg id="icon-moon" class="btn-icon" viewBox="0 0 20 20" fill="none">
+                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"
+                              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button id="settings-btn" class="icon-btn" aria-label="Settings">
+                    <svg class="btn-icon" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+                        <path d="M10 2.5v1M10 16.5v1M2.5 10h1M16.5 10h1M4.7 4.7l.7.7M14.6 14.6l.7.7M4.7 15.3l.7-.7M14.6 5.4l.7-.7"
+                              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <div id="status" class="pill idle">Idle</div>
+            </div>
+        </header>
+
+        <!-- ── Verdict hero card ───────────────────────────── -->
+        <div class="verdict-hero idle" id="verdict-hero">
+            <!-- Hidden ring element for JS compatibility -->
+            <circle id="ring-fill" style="display:none"/>
+
+            <div class="hero-top">
+                <div class="hero-badge">
+                    <span class="hero-icon" id="verdict-icon"></span>
+                    <span class="hero-verdict" id="verdict-label">Analysing</span>
+                </div>
+                <span class="hero-pct" id="risk-pct">—</span>
+            </div>
+
+            <div class="hero-domain" id="current-domain">Scanning...</div>
+            <div class="hero-url" id="current-url"></div>
+
+            <div class="hero-foot">
+                <div class="hero-bar-track">
+                    <div class="hero-bar-fill" id="bar-fill"></div>
+                </div>
+                <div class="hero-meta">
+                    <span id="bar-label">Initialising protection...</span>
+                    <span id="analysis-time"></span>
+                </div>
             </div>
         </div>
-        <div class="bar-wrap">
-            <div class="bar-track">
-                <div class="bar-fill" id="bar-fill"></div>
+
+        <!-- ── Quick actions ───────────────────────────────── -->
+        <div class="quick-actions" id="quick-actions" style="display:none">
+            <button class="quick-btn trust" id="btn-trust">
+                <svg viewBox="0 0 16 16" fill="none" class="qbtn-icon">
+                    <path d="M8 1L2 3.5v4C2 11 4.667 13.833 8 14.5 11.333 13.833 14 11 14 7.5v-4L8 1z"
+                          stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+                    <path d="M5.5 8l2 2 3-3" stroke="currentColor" stroke-width="1.3"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span id="btn-trust-label">Trust this site</span>
+            </button>
+            <button class="quick-btn block-btn" id="btn-block">
+                <svg viewBox="0 0 16 16" fill="none" class="qbtn-icon">
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M5 5l6 6M11 5l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+                <span id="btn-block-label">Block this site</span>
+            </button>
+        </div>
+
+        <!-- ── Detection flags ─────────────────────────────── -->
+        <section class="flags-section">
+            <div class="section-header">
+                <span class="section-title">Detection flags</span>
+                <span class="flag-count" id="flag-count"></span>
             </div>
-            <span class="bar-label" id="bar-label">Scanning...</span>
-        </div>
-    </section>
+            <div id="flags" class="flags-list"></div>
+            <button class="show-more" id="show-more" style="display:none">Show all flags</button>
+        </section>
 
-    <section class="flags-section">
-        <div class="section-header">
-            <span class="eyebrow">Security flags</span>
-            <span class="flag-count" id="flag-count"></span>
-        </div>
-        <div id="flags" class="flags-list"></div>
-        <button class="show-more" id="show-more" style="display:none">Show all flags</button>
-    </section>
+        <!-- ── Report CTA ──────────────────────────────────── -->
+        <button class="report-btn" id="report-btn" style="display:none">
+            <svg viewBox="0 0 20 20" fill="none" class="report-icon">
+                <path d="M4 4h7l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z"
+                      stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M11 4v4h4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M7 10h6M7 13h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span id="report-btn-label">Generate Security Report</span>
+        </button>
 
-    <footer class="footer">
-        <span id="analysis-time"></span>
-        <span>Real-time protection active</span>
-    </footer>
+        <footer class="footer-line">
+            <span class="status-dot"></span>
+            Real-time protection active
+        </footer>
+
+    </div>
+
+    <!-- ── Settings panel ─────────────────────────────────── -->
+    <div id="view-settings" class="settings-panel" aria-hidden="true">
+
+        <header class="header">
+            <button id="settings-back" class="icon-btn back-btn" aria-label="Back">
+                <svg class="btn-icon" viewBox="0 0 20 20" fill="none">
+                    <path d="M12 4l-6 6 6 6" stroke="currentColor" stroke-width="1.4"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <span class="brand-name">Site Lists</span>
+            <div style="width:28px"></div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="whitelist">
+                <svg viewBox="0 0 14 14" fill="none" class="tab-icon">
+                    <path d="M7 1L1.5 3.25v3C1.5 9.5 3.917 12.083 7 12.833 10.083 12.083 12.5 9.5 12.5 6.25v-3L7 1z"
+                          stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                    <path d="M4.5 7l2 2 3-3" stroke="currentColor" stroke-width="1.2"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Trusted
+            </button>
+            <button class="tab" data-tab="blacklist">
+                <svg viewBox="0 0 14 14" fill="none" class="tab-icon">
+                    <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/>
+                    <path d="M4.5 4.5l5 5M9.5 4.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                </svg>
+                Blocked
+            </button>
+        </div>
+
+        <div class="tab-panel active" id="tab-whitelist">
+            <p class="tab-desc">Domains you trust completely — all detection checks are skipped.</p>
+            <div class="add-row">
+                <input id="whitelist-input" class="domain-input" type="text"
+                       placeholder="example.com" autocomplete="off" spellcheck="false"/>
+                <button class="add-btn trust-add" id="whitelist-add">Add</button>
+            </div>
+            <p class="add-hint" id="whitelist-hint"></p>
+            <div class="list-wrap" id="whitelist-list"></div>
+        </div>
+
+        <div class="tab-panel" id="tab-blacklist">
+            <p class="tab-desc">Domains you always want blocked, regardless of analysis.</p>
+            <div class="add-row">
+                <input id="blacklist-input" class="domain-input" type="text"
+                       placeholder="example.com" autocomplete="off" spellcheck="false"/>
+                <button class="add-btn block-add" id="blacklist-add">Add</button>
+            </div>
+            <p class="add-hint" id="blacklist-hint"></p>
+            <div class="list-wrap" id="blacklist-list"></div>
+        </div>
+
+        <footer class="footer">
+            <span id="sync-status">Loading...</span>
+            <span id="list-counts"></span>
+        </footer>
+
+    </div>
 
 </div>
 <script src="popup.js"></script>

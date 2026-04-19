@@ -32,7 +32,8 @@ class FeatureExtractor {
     _getPageMeta() {
         const host       = window.location.hostname.replace(/^www\./, "");
         const subdomains = host.split(".");
-        const rawUrl     = window.top.location.href;
+        let rawUrl;
+        try { rawUrl = window.top.location.href; } catch { rawUrl = window.location.href; }
 
         return {
             // Cap URL length — validated server-side too
@@ -225,7 +226,7 @@ class WarningBanner {
         const msgDiv   = document.createElement("div");
         msgDiv.style.cssText = "flex-grow:1; text-align:center;";
 
-        const icon   = document.createTextNode(isBlock ? "🚫 " : "⚠️ ");
+        const icon   = document.createTextNode(isBlock ? "! " : "! ");
         const strong = document.createElement("strong");
         strong.textContent = "PhishGuard: ";
         const text = document.createTextNode(message);   // textContent — safe
@@ -261,11 +262,12 @@ class PageAnalyser {
 
     _analyse() {
         const features = this._extractor.extract();
+        // Save page data immediately so report generation works even before analysis completes
+        chrome.storage.local.set({ lastPageData: features });
 
         chrome.runtime.sendMessage({ type: "ANALYZE_PAGE", data: features }, response => {
+            // background.js already saves analysisResult with timestamp — don't overwrite it
             if (!response || window.top !== window.self) return;
-
-            chrome.storage.local.set({ analysisResult: { url: features.url, data: response } });
 
             if (response.action === "BLOCK" || response.action === "WARN") {
                 const msg = response.action === "BLOCK"

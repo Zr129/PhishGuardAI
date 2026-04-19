@@ -1,34 +1,46 @@
 {
   "manifest_version": 3,
   "name": "PhishGuard Detector",
-  "version": "1.0",
-  "description": "Real-time phishing detection using behavioral and brand analysis.",
-
+  "version": "2.0",
+  "description": "Real-time phishing detection using ML, behavioural analysis and brand protection.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "permissions": [
     "storage",
     "activeTab",
     "scripting",
-    "tabs" 
+    "tabs",
+    "downloads"
   ],
-
   "host_permissions": [
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
     "<all_urls>"
   ],
-
   "background": {
     "service_worker": "background.js"
   },
-
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
-
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }

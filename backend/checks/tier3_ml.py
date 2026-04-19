@@ -23,7 +23,7 @@ MODEL_PATH = os.path.join(
     "ml", "model.joblib"
 )
 
-BLOCK_THRESHOLD = 0.85
+MIN_TRIGGER_PROB = 0.15  # below this ML stays silent — avoids noise on clean pages
 
 # Human-readable explanations for each ML feature
 # Maps PhiUSIIL column name → plain English description of why it's suspicious
@@ -90,21 +90,26 @@ class MLCheck(BaseCheck):
                     vector[col] = 0
 
             X         = pd.DataFrame([vector], columns=FEATURE_COLS)
+            
             base_prob = self._model.predict_proba(X)[0][1]
+
+            # Only continue if ML sees meaningful phishing signal
+            if base_prob < MIN_TRIGGER_PROB:
+                logger.info(f"[ML] Low probability ({base_prob:.3f}) — silent pass")
+                return CheckResult.clean()
 
             adj_prob, custom_reasons = self._preprocessor.adjust(base_prob, data, refined)
 
-            score    = round(adj_prob * 14)
-            is_block = adj_prob >= BLOCK_THRESHOLD
+            score = round(adj_prob * 14)
 
-            logger.info(f"[ML] base={base_prob:.3f} → adjusted={adj_prob:.3f} score={score} block={is_block}")
+            logger.info(f"[ML] base={base_prob:.3f} → adjusted={adj_prob:.3f} score={score}")
 
             # Generate human-readable reasons from top contributing features
             reasons = self._explain(vector, adj_prob) + custom_reasons
 
             return CheckResult(
                 triggered=True,
-                is_block=is_block,
+                is_block=False,  # ML contributes to cumulative score only — never hard-blocks
                 score=score,
                 reasons=reasons,
                 tier="ML",

@@ -12,7 +12,7 @@ from models.models import URLRequest
 logger = logging.getLogger("PhishGuard")
 
 # URL length above this is suspicious (PhiUSIIL: 3rd most important feature)
-SUSPICIOUS_URL_LENGTH = 200
+SUSPICIOUS_URL_LENGTH = 300  # raised from 200 — avoids login pages with long query params
 
 
 class HeuristicCheck(BaseCheck):
@@ -36,10 +36,13 @@ class HeuristicCheck(BaseCheck):
         reasons = []
 
         # -- Suspicious URL length --
-        # Long URLs with many params are a strong phishing signal
-        if len(data.url) > SUSPICIOUS_URL_LENGTH:
+        # Only flag if URL is very long AND contains suspicious query params
+        # (= or & count > 5 suggests data harvesting, not just a long path)
+        url_len = len(data.url)
+        param_count = data.url.count("=") + data.url.count("&")
+        if url_len > SUSPICIOUS_URL_LENGTH and param_count > 5:
             score += 1
-            reasons.append(f"Unusually long URL ({len(data.url)} chars)")
+            reasons.append(f"Unusually long URL with many parameters ({url_len} chars)")
 
         # -- URL obfuscation via @ --
         if "@" in data.url:
