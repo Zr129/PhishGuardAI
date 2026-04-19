@@ -14,7 +14,8 @@
     "activeTab",
     "scripting",
     "tabs",
-    "downloads"
+    "downloads",
+    "windows"
   ],
   "host_permissions": [
     "http://localhost:8000/*",

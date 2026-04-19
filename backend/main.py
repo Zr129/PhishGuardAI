@@ -67,7 +67,7 @@ def _load_brands() -> dict | None:
 
 # ── Assemble pipeline ─────────────────────────────────────
 
-brands             = _load_brands()
+#brands             = _load_brands()
 blacklist_provider = LiveFeedBlacklist(feed_url=FEED_URL, refresh_hours=REFRESH_HOURS)
 user_lists         = UserListProvider()
 
@@ -80,7 +80,7 @@ checks = [
     IPAddressCheck(),
     IFrameTrapCheck(),
     InsecurePasswordCheck(),
-    BrandImpersonationCheck(brands),
+    BrandImpersonationCheck(),
     # Tier 2 — heuristics
     HeuristicCheck(),
     # Tier 3 — ML

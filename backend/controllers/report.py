@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -106,20 +106,24 @@ def build_report_router(report_generator, extractor, limiter: Limiter) -> APIRou
             # Re-extract URL features for the report context
             refined = extractor.extract(body.url, body.links)
 
-            # Generate report
-            html = report_generator.generate(url_request, analysis_result, refined)
+            # Generate report — returns (pdf_bytes | None, html_string)
+            pdf_bytes, html = report_generator.generate(url_request, analysis_result, refined)
 
-            # Return as downloadable HTML file
-            domain  = body.domain.replace(".", "_")
-            ts      = datetime.utcnow().strftime("%Y%m%d_%H%M")
-            filename = f"phishguard_report_{domain}_{ts}.html"
+            domain   = body.domain.replace(".", "_")
+            ts       = datetime.utcnow().strftime("%Y%m%d_%H%M")
 
+            if pdf_bytes:
+                filename = f"phishguard_{domain}_{ts}.pdf"
+                return Response(
+                    content=pdf_bytes,
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+                )
+
+            filename = f"phishguard_{domain}_{ts}.html"
             return HTMLResponse(
                 content=html,
-                headers={
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Type": "text/html; charset=utf-8",
-                }
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
         except ValueError as e:

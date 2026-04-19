@@ -23,7 +23,8 @@ MODEL_PATH = os.path.join(
     "ml", "model.joblib"
 )
 
-MIN_TRIGGER_PROB = 0.15  # below this ML stays silent — avoids noise on clean pages
+MIN_TRIGGER_PROB  = 0.15   # below this ML stays silent — avoids noise on clean pages
+BLOCK_THRESHOLD   = 0.85   # above this ML alone can hard-block
 
 # Human-readable explanations for each ML feature
 # Maps PhiUSIIL column name → plain English description of why it's suspicious
@@ -109,7 +110,7 @@ class MLCheck(BaseCheck):
 
             return CheckResult(
                 triggered=True,
-                is_block=False,  # ML contributes to cumulative score only — never hard-blocks
+                is_block=adj_prob >= BLOCK_THRESHOLD,
                 score=score,
                 reasons=reasons,
                 tier="ML",

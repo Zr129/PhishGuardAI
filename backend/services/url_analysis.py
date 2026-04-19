@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 
 # ML score weight — prevents raw ML probability score from dominating
 # heuristic scores which use a different scale
-ML_SCORE_WEIGHT = 0.65
+ML_SCORE_WEIGHT = 0.6
 
 
 def sigmoid_confidence(score: float, max_score: float = 14.0) -> int:

@@ -181,65 +181,240 @@ class FeatureExtractor {
 
 // ─────────────────────────────────────────
 // WarningBanner
-// Security: uses textContent for all user-controlled strings
+// Security: all user-facing strings via textContent, SVG via createElementNS
 // ─────────────────────────────────────────
 
 class WarningBanner {
-    static BANNER_ID = "phishguard-alert-banner";
-    static HEIGHT    = "80px";
+    static BANNER_ID = "phishguard-banner";
+    static STYLE_ID  = "phishguard-banner-style";
 
-    show(action, message) {
+    constructor() {
+        this._timer = null;
+    }
+
+    show(action, domain) {
         if (window.top !== window.self) return;
         this._removeExisting();
-        const banner = this._buildElement(action, message);
+        this._injectStyles();
+        const banner = this._build(action, domain);
         document.documentElement.prepend(banner);
-        document.documentElement.style.marginTop = WarningBanner.HEIGHT;
-        document.getElementById("pg-close").onclick = () => this.dismiss();
+        // Double rAF ensures transform transition fires after element is in DOM
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            banner.style.transform = "translateY(0)";
+        }));
+        document.documentElement.style.marginTop = "56px";
+        if (action !== "BLOCK") {
+            this._startCountdown(banner);
+        }
     }
 
     dismiss() {
-        this._removeExisting();
-        document.documentElement.style.marginTop = "0";
+        clearInterval(this._timer);
+        this._timer = null;
+        const banner = document.getElementById(WarningBanner.BANNER_ID);
+        if (banner) {
+            banner.style.transform = "translateY(-100%)";
+            setTimeout(() => this._removeExisting(), 300);
+        } else {
+            this._removeExisting();
+        }
+        document.documentElement.style.marginTop = "";
     }
 
     _removeExisting() {
         document.getElementById(WarningBanner.BANNER_ID)?.remove();
+        clearInterval(this._timer);
+        this._timer = null;
     }
 
-    _buildElement(action, message) {
+    _injectStyles() {
+        if (document.getElementById(WarningBanner.STYLE_ID)) return;
+        const style = document.createElement("style");
+        style.id = WarningBanner.STYLE_ID;
+        style.textContent = [
+            "#phishguard-banner {",
+            "  position:fixed;top:0;left:0;right:0;z-index:2147483647;",
+            "  height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;",
+            "  transform:translateY(-100%);",
+            "  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);",
+            "  font-family:-apple-system,'Segoe UI',system-ui,sans-serif;",
+            "}",
+            "#phishguard-banner.block{background:#1a0505;border-bottom:1px solid rgba(239,68,68,0.4);}",
+            "#phishguard-banner.warn{background:#1c1505;border-bottom:1px solid rgba(234,179,8,0.4);}",
+            "#phishguard-banner .pg-icon-circle{",
+            "  width:32px;height:32px;border-radius:50%;flex-shrink:0;",
+            "  display:flex;align-items:center;justify-content:center;",
+            "}",
+            "#phishguard-banner.block .pg-icon-circle{background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);}",
+            "#phishguard-banner.warn  .pg-icon-circle{background:rgba(234,179,8,0.12);border:1px solid rgba(234,179,8,0.3);}",
+            "#phishguard-banner .pg-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}",
+            "#phishguard-banner .pg-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;}",
+            "#phishguard-banner.block .pg-title{color:rgba(239,68,68,0.9);}",
+            "#phishguard-banner.warn  .pg-title{color:rgba(234,179,8,0.9);}",
+            "#phishguard-banner .pg-body{font-size:11px;color:rgba(255,255,255,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}",
+            "#phishguard-banner .pg-domain{font-family:'SF Mono','Consolas',monospace;color:rgba(255,255,255,0.85);}",
+            "#phishguard-banner .pg-actions{display:flex;align-items:center;gap:5px;flex-shrink:0;}",
+            "#phishguard-banner .pg-btn{",
+            "  padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;",
+            "  cursor:pointer;border:1px solid;background:transparent;",
+            "  font-family:inherit;white-space:nowrap;transition:background 0.12s;",
+            "}",
+            "#phishguard-banner.block .pg-btn-leave{color:#ef4444;border-color:rgba(239,68,68,0.4);}",
+            "#phishguard-banner.block .pg-btn-leave:hover{background:rgba(239,68,68,0.1);}",
+            "#phishguard-banner.warn  .pg-btn-leave{color:#fbbf24;border-color:rgba(234,179,8,0.4);}",
+            "#phishguard-banner.warn  .pg-btn-leave:hover{background:rgba(234,179,8,0.1);}",
+            "#phishguard-banner .pg-btn-details{color:rgba(255,255,255,0.65);border-color:rgba(255,255,255,0.15);}",
+            "#phishguard-banner .pg-btn-details:hover{background:rgba(255,255,255,0.08);}",
+            "#phishguard-banner .pg-btn-dismiss{color:rgba(255,255,255,0.4);border-color:transparent;}",
+            "#phishguard-banner .pg-btn-dismiss:hover{color:rgba(255,255,255,0.65);}",
+            "#phishguard-banner .pg-close{",
+            "  width:24px;height:24px;border-radius:4px;border:none;background:transparent;",
+            "  cursor:pointer;color:rgba(255,255,255,0.3);display:flex;align-items:center;",
+            "  justify-content:center;transition:color 0.12s;flex-shrink:0;",
+            "}",
+            "#phishguard-banner .pg-close:hover{color:rgba(255,255,255,0.65);}",
+            "#phishguard-banner .pg-progress{",
+            "  position:absolute;bottom:0;left:0;height:2px;",
+            "  background:rgba(234,179,8,0.55);transition:width 1s linear;",
+            "}",
+        ].join("\n");
+        document.head.appendChild(style);
+    }
+
+    _build(action, domain) {
         const isBlock = action === "BLOCK";
-        const banner  = document.createElement("div");
-        banner.id     = WarningBanner.BANNER_ID;
+        const ns      = "http://www.w3.org/2000/svg";
 
-        Object.assign(banner.style, {
-            position: "fixed", top: "0", left: "0", width: "100%",
-            height: WarningBanner.HEIGHT, zIndex: "2147483647",
-            backgroundColor: isBlock ? "#d93025" : "#f29900",
-            color: isBlock ? "#ffffff" : "#000000",
-            display: "flex", justifyContent: "center", alignItems: "center",
-            fontWeight: "bold", fontSize: "18px",
-            fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            boxShadow: "0 4px 15px rgba(0,0,0,0.4)", padding: "0 20px",
-        });
+        const banner = document.createElement("div");
+        banner.id        = WarningBanner.BANNER_ID;
+        banner.className = isBlock ? "block" : "warn";
+        // Set initial transform inline so CSS transition can animate it
+        banner.style.transform = "translateY(-100%)";
 
-        // Security: build DOM nodes instead of innerHTML to prevent XSS
-        const msgDiv   = document.createElement("div");
-        msgDiv.style.cssText = "flex-grow:1; text-align:center;";
+        // ── Icon zone ──────────────────────────────────────
+        const iconCircle = document.createElement("div");
+        iconCircle.className = "pg-icon-circle";
+        iconCircle.appendChild(this._buildIconSvg(isBlock));
 
-        const icon   = document.createTextNode(isBlock ? "! " : "! ");
-        const strong = document.createElement("strong");
-        strong.textContent = "PhishGuard: ";
-        const text = document.createTextNode(message);   // textContent — safe
+        // ── Text zone ──────────────────────────────────────
+        const textZone = document.createElement("div");
+        textZone.className = "pg-text";
 
-        msgDiv.append(icon, strong, text);
+        const title = document.createElement("div");
+        title.className   = "pg-title";
+        title.textContent = isBlock ? "Phishing Threat Detected" : "Suspicious Site Warning";
+
+        const body = document.createElement("div");
+        body.className = "pg-body";
+        body.appendChild(document.createTextNode("Flagged domain: "));
+        const domainSpan = document.createElement("span");
+        domainSpan.className   = "pg-domain";
+        domainSpan.textContent = domain;   // textContent — safe, no innerHTML
+        body.appendChild(domainSpan);
+
+        textZone.append(title, body);
+
+        // ── Actions zone ───────────────────────────────────
+        const actions = document.createElement("div");
+        actions.className = "pg-actions";
+
+        const btnLeave = document.createElement("button");
+        btnLeave.className   = "pg-btn pg-btn-leave";
+        btnLeave.textContent = "Leave this page";
+        btnLeave.onclick     = () => history.back();
+
+        const btnDetails = document.createElement("button");
+        btnDetails.className   = "pg-btn pg-btn-details";
+        btnDetails.textContent = "View details";
+        btnDetails.onclick     = () => chrome.runtime.sendMessage({ type: "OPEN_POPUP" });
+
+        const btnDismiss = document.createElement("button");
+        btnDismiss.className   = "pg-btn pg-btn-dismiss";
+        btnDismiss.textContent = isBlock ? "Dismiss" : "Ignore warning";
+        btnDismiss.onclick     = () => this.dismiss();
 
         const closeBtn = document.createElement("button");
-        closeBtn.id          = "pg-close";
-        closeBtn.textContent = "×";
-        closeBtn.style.cssText = "margin-left:20px; cursor:pointer; background:none; border:none; font-size:20px; color:inherit;";
+        closeBtn.className = "pg-close";
+        closeBtn.setAttribute("aria-label", "Close");
+        closeBtn.onclick = () => this.dismiss();
+        closeBtn.appendChild(this._buildCloseSvg());
 
-        banner.append(msgDiv, closeBtn);
+        actions.append(btnLeave, btnDetails, btnDismiss, closeBtn);
+        banner.append(iconCircle, textZone, actions);
+
+        // Countdown progress bar for WARN only
+        if (!isBlock) {
+            const progress = document.createElement("div");
+            progress.className = "pg-progress";
+            progress.id        = "phishguard-progress";
+            progress.style.width = "100%";
+            banner.appendChild(progress);
+        }
+
         return banner;
+    }
+
+    _buildIconSvg(isBlock) {
+        const ns  = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", "0 0 16 16");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("width", "16");
+        svg.setAttribute("height", "16");
+        svg.style.color = isBlock ? "#ef4444" : "#fbbf24";
+
+        if (isBlock) {
+            const circle = document.createElementNS(ns, "circle");
+            circle.setAttribute("cx", "8"); circle.setAttribute("cy", "8"); circle.setAttribute("r", "6");
+            circle.setAttribute("stroke", "currentColor"); circle.setAttribute("stroke-width", "1.5");
+            const cross = document.createElementNS(ns, "path");
+            cross.setAttribute("d", "M5.5 5.5l5 5M10.5 5.5l-5 5");
+            cross.setAttribute("stroke", "currentColor"); cross.setAttribute("stroke-width", "1.5");
+            cross.setAttribute("stroke-linecap", "round");
+            svg.append(circle, cross);
+        } else {
+            const tri = document.createElementNS(ns, "path");
+            tri.setAttribute("d", "M8 2l6 11H2L8 2z");
+            tri.setAttribute("stroke", "currentColor"); tri.setAttribute("stroke-width", "1.5");
+            tri.setAttribute("stroke-linejoin", "round");
+            const line = document.createElementNS(ns, "path");
+            line.setAttribute("d", "M8 7v3.5M8 12.5v.5");
+            line.setAttribute("stroke", "currentColor"); line.setAttribute("stroke-width", "1.5");
+            line.setAttribute("stroke-linecap", "round");
+            svg.append(tri, line);
+        }
+        return svg;
+    }
+
+    _buildCloseSvg() {
+        const ns  = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", "0 0 12 12");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("width", "12");
+        svg.setAttribute("height", "12");
+        const p = document.createElementNS(ns, "path");
+        p.setAttribute("d", "M2 2l8 8M10 2l-8 8");
+        p.setAttribute("stroke", "currentColor"); p.setAttribute("stroke-width", "1.5");
+        p.setAttribute("stroke-linecap", "round");
+        svg.appendChild(p);
+        return svg;
+    }
+
+    _startCountdown(banner) {
+        const DURATION = 8;
+        let remaining  = DURATION;
+        const bar      = document.getElementById("phishguard-progress");
+
+        this._timer = setInterval(() => {
+            remaining--;
+            if (bar) bar.style.width = `${(remaining / DURATION) * 100}%`;
+            if (remaining <= 0) {
+                clearInterval(this._timer);
+                this._timer = null;
+                this.dismiss();
+            }
+        }, 1000);
     }
 }
 
@@ -270,10 +445,7 @@ class PageAnalyser {
             if (!response || window.top !== window.self) return;
 
             if (response.action === "BLOCK" || response.action === "WARN") {
-                const msg = response.action === "BLOCK"
-                    ? "Likely phishing activity"
-                    : "Suspicious activity detected";
-                this._banner.show(response.action, msg);
+                this._banner.show(response.action, features.domain || window.location.hostname);
             }
         });
     }

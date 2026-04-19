@@ -336,8 +336,8 @@ class PopupRenderer {
         this._setText("flagCount", "");
         this._setHTML("flags",
             `<div class="offline-msg">
-                Start the backend server to enable protection.<br>
-                <code style="font-size:10px;opacity:0.7">uvicorn main:app --reload</code>
+                Backend server is not running.<br>
+                <span style="font-size:11px;opacity:0.55">Start the backend to enable protection.</span>
             </div>`
         );
         if (this._els.showMore)     this._els.showMore.style.display     = "none";
@@ -352,16 +352,23 @@ class PopupRenderer {
         const action  = data.action.toLowerCase();
 
         // Verdict text per action
-        const labels = { block: "Threat Detected", warn: "Caution", allow: "Safe" };
+        const labels = { block: "Threat Detected", warn: "Suspicious", allow: "Secure", error: "Offline" };
 
         try { this._domain = new URL(url).hostname.replace(/^www\./, ""); } catch { this._domain = ""; }
 
-        this._setHeroClass(action);
+        // Only colour the hero for warn/block — allow stays neutral
+        this._setHeroClass(action === 'allow' && tagged.length === 0 ? 'idle' : action);
         this._setHeroIcon(action);
         this._setText("verdictLabel", labels[action] || "Verdict");
         this._setText("domain", this._domain || "Unknown site");
-        this._setText("urlEl", url || "");
-        this._setStatus(data.prediction.toUpperCase(), action);
+        // Show truncated URL under domain
+        if (this._els.urlEl) {
+            const display = (url || "").replace(/^https?:\/\//, "").replace(/^www\./, "");
+            this._els.urlEl.textContent = display.length > 55 ? display.substring(0, 55) + "…" : display;
+            this._els.urlEl.title = url || "";  // full URL on hover
+        }
+        const pillLabels = { block: "BLOCKED", warn: "CAUTION", allow: "SAFE", safe: "SAFE" };
+        this._setStatus(pillLabels[action] || data.prediction.toUpperCase(), action);
 
         if (this._els.shield) {
             this._els.shield.style.color = action === "block" ? "var(--danger)"
@@ -371,7 +378,9 @@ class PopupRenderer {
 
         this._setBar(conf);
         this._setText("riskPct", `${conf}%`);
-        this._setText("barLabel", `Risk: ${conf}% · ${reasons.length} flag${reasons.length === 1 ? "" : "s"}`);
+        const flagTxt = reasons.length === 0 ? "No threats detected"
+            : `${reasons.length} flag${reasons.length === 1 ? "" : "s"} · ${conf}% risk`;
+        this._setText("barLabel", flagTxt);
 
         if (this._els.timeEl && timestamp) {
             const mins = Math.round((Date.now() - timestamp) / 60000);
@@ -437,12 +446,22 @@ class PopupRenderer {
                 throw new Error(err.detail || "Report generation failed");
             }
 
-            const html     = await res.text();
-            const blob     = new Blob([html], { type: "text/html" });
-            const blobUrl  = URL.createObjectURL(blob);
-            const domain   = (payload.domain || "unknown").replace(/\./g, "_");
-            const ts       = new Date().toISOString().slice(0, 10);
-            const filename = `phishguard_${domain}_${ts}.html`;
+            const contentType = res.headers.get("content-type") || "";
+            const domain      = (payload.domain || "unknown").replace(/\./g, "_");
+            const ts          = new Date().toISOString().slice(0, 10);
+
+            let blobUrl, filename;
+            if (contentType.includes("application/pdf")) {
+                const pdfData = await res.arrayBuffer();
+                const blob    = new Blob([pdfData], { type: "application/pdf" });
+                blobUrl       = URL.createObjectURL(blob);
+                filename      = `phishguard_${domain}_${ts}.pdf`;
+            } else {
+                const html = await res.text();
+                const blob = new Blob([html], { type: "text/html" });
+                blobUrl    = URL.createObjectURL(blob);
+                filename   = `phishguard_${domain}_${ts}.html`;
+            }
 
             await chrome.downloads.download({ url: blobUrl, filename, saveAs: false });
 

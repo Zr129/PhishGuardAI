@@ -5,13 +5,13 @@
 
 :root {
     /* Surfaces */
-    --bg:        #f2f4f8;
+    --bg:        #f8f9fb;
     --surface:   #ffffff;
     --surface-2: #eef0f5;
     --surface-3: #e6e9f0;
 
     /* Text */
-    --text:      #0c1022;
+    --text:      #0f1117;
     --text-2:    #505870;
     --text-3:    #8e98b0;
 
@@ -20,26 +20,26 @@
     --border-2:  #c8cedd;
 
     /* Brand */
-    --accent:    #1a50d8;
-    --accent-h:  #1540b8;
-    --accent-rgb: 26, 80, 216;
+    --accent:    #1d4ed8;
+    --accent-h:  #1e40af;
+    --accent-rgb: 29, 78, 216;
 
     /* Semantic colours */
-    --safe:      #0a9966;
-    --safe-bg:   #edfaf4;
-    --safe-bd:   #5ed4a8;
+    --safe:      #059669;
+    --safe-bg:   #ecfdf5;
+    --safe-bd:   #6ee7b7;
 
-    --warn:      #c97f00;
-    --warn-bg:   #fff8e5;
-    --warn-bd:   #f0c040;
+    --warn:      #d97706;
+    --warn-bg:   #fffbeb;
+    --warn-bd:   #fcd34d;
 
-    --danger:    #d42020;
-    --danger-bg: #fef1f1;
-    --danger-bd: #f0a0a0;
+    --danger:    #dc2626;
+    --danger-bg: #fef2f2;
+    --danger-bd: #fca5a5;
 
-    --info:      #1a50d8;
-    --info-bg:   #eef3fd;
-    --info-bd:   #90b4f8;
+    --info:      #1d4ed8;
+    --info-bg:   #eff6ff;
+    --info-bd:   #93c5fd;
 
     /* Hero gradients — each verdict state */
     --g-idle-a:  #0b1d5e;
@@ -62,28 +62,28 @@
 
 body.dark {
     --bg:        #0d1117;
-    --surface:   #161b24;
+    --surface:   #161b22;
     --surface-2: #1c2230;
     --surface-3: #222b3a;
-    --text:      #dde4f0;
+    --text:      #e6edf3;
     --text-2:    #7888a8;
     --text-3:    #455068;
     --border:    #28334a;
     --border-2:  #354060;
     --accent:    #4d80f0;
     --accent-h:  #3870e8;
-    --safe:      #1ab87a;
-    --safe-bg:   #0a1f16;
-    --safe-bd:   #1a6650;
-    --warn:      #e09820;
-    --warn-bg:   #1e1400;
-    --warn-bd:   #806010;
-    --danger:    #f05050;
-    --danger-bg: #200a0a;
-    --danger-bd: #802020;
-    --info:      #4d80f0;
-    --info-bg:   #0a1428;
-    --info-bd:   #204080;
+    --safe:      #10b981;
+    --safe-bg:   #022c22;
+    --safe-bd:   #065f46;
+    --warn:      #f59e0b;
+    --warn-bg:   #1c1400;
+    --warn-bd:   #78350f;
+    --danger:    #f87171;
+    --danger-bg: #1f0a0a;
+    --danger-bd: #7f1d1d;
+    --info:      #60a5fa;
+    --info-bg:   #0a1628;
+    --info-bd:   #1e3a5f;
     --g-idle-a:  #0a1540;
     --g-idle-b:  #1a40c8;
     --g-allow-a: #041a10;
@@ -189,7 +189,7 @@ body {
 .verdict-hero {
     border-radius: var(--r-xl);
     padding: 16px 18px 14px;
-    display: flex; flex-direction: column; gap: 11px;
+    display: flex; flex-direction: column; gap: 9px;
     position: relative; overflow: hidden;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.1);
     transition: box-shadow 0.3s ease;
@@ -278,13 +278,21 @@ body {
     line-height: 1.3;
 }
 
+.hero-domain-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
 .hero-url {
     font-size: 10px;
-    color: rgba(255, 255, 255, 0.5);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-    line-height: 1.3;
-    margin-top: -4px;
+    line-height: 1.2;
 }
 
 /* Bottom: bar + meta */
@@ -358,7 +366,7 @@ body {
 .flag {
     display: flex; align-items: flex-start; gap: 9px;
     padding: 8px 10px;
-    border-radius: var(--r); border-left: 2.5px solid transparent;
+    border-radius: var(--r); border-left: 2px solid transparent;
     font-size: 12px; line-height: 1.4;
     animation: fadeSlideUp 0.2s ease;
 }
