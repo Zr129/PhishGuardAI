@@ -49,7 +49,15 @@ class DomainIntelligence:
             created = self._earliest_date(w.creation_date)
             if created:
                 result["created"]  = created.strftime("%Y-%m-%d")
-                result["age_days"] = (datetime.now(timezone.utc) - created.replace(tzinfo=timezone.utc)).days
+                # python-whois usually returns naive datetimes (no tzinfo).
+                # Treat them as UTC if naive; convert to UTC if aware. The
+                # previous code used .replace(tzinfo=...) which OVERWROTE
+                # an existing timezone instead of converting it.
+                if created.tzinfo is None:
+                    created_utc = created.replace(tzinfo=timezone.utc)
+                else:
+                    created_utc = created.astimezone(timezone.utc)
+                result["age_days"] = (datetime.now(timezone.utc) - created_utc).days
 
             # Expiry date
             expires = self._earliest_date(w.expiration_date)

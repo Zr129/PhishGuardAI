@@ -4,10 +4,6 @@ CustomSignalPreprocessor
 Injects extension-only signals into the ML pipeline AFTER model inference.
 Only fires on signals that Tier 2 heuristics do NOT already cover, preventing
 duplicate reasons in the security report.
-
-Security note on eval():
-  The expressions in CUSTOM_FIELDS are module-level string constants defined
-  in ml/features.py — they are never user-supplied.
 """
 
 import logging
@@ -24,9 +20,6 @@ _REASON_MAP = {
     "HasDomainDashes":         "Domain contains dashes (ML signal)",
 }
 
-# IsHiddenSubmission is intentionally excluded here —
-# Tier 2 HeuristicCheck already flags it with a reason and score.
-# Only inject signals that Tier 2 does NOT cover.
 _SKIP_IF_TIER2_COVERS = {"IsHiddenSubmission"}
 
 
@@ -44,25 +37,24 @@ class CustomSignalPreprocessor:
         refined: dict,
         existing_reasons: list[str] = None,
     ) -> tuple[float, list[str]]:
-        prob    = base_prob
+        prob = base_prob
         reasons = []
         existing_reasons = existing_reasons or []
 
-        for field, expr in CUSTOM_FIELDS.items():
-            # Skip signals already handled by Tier 2
+        for field, extractor in CUSTOM_FIELDS.items():
             if field in _SKIP_IF_TIER2_COVERS:
                 continue
 
             try:
-                triggered = bool(eval(expr))  # noqa: S307
-            except Exception:
+                triggered = bool(extractor(data, refined))
+            except Exception as exc:
+                logger.warning(f"[PREPROCESS] Custom signal failed for {field}: {exc}")
                 triggered = False
 
             if triggered:
-                delta  = CUSTOM_ADJUSTMENTS.get(field, 0.0)
-                prob  += delta
+                delta = CUSTOM_ADJUSTMENTS.get(field, 0.0)
+                prob += delta
                 reason = _REASON_MAP.get(field, f"{field} detected")
-                # Only add reason if not already in the report
                 if reason not in existing_reasons:
                     reasons.append(reason)
                 logger.debug(f"[PREPROCESS] {field} → +{delta:.0%}  prob now {prob:.3f}")

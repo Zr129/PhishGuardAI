@@ -201,17 +201,20 @@ body {
 .verdict-hero.warn  { background: linear-gradient(145deg, var(--g-warn-a)  0%, var(--g-warn-b)  100%); }
 .verdict-hero.block { background: linear-gradient(145deg, var(--g-block-a) 0%, var(--g-block-b) 100%); }
 
-/* Subtle grid texture overlay */
+/* Subtle grid texture overlay — z-index:-1 pushes it behind content without
+   affecting flex child layout. The old approach (position:relative + z-index:1
+   on flex children) caused them to collapse to zero size in Chrome. */
 .verdict-hero::before {
     content: '';
     position: absolute; inset: 0; pointer-events: none;
+    z-index: 0;
     background-image:
         linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
     background-size: 20px 20px;
 }
 
-/* Glow orb in top-right corner */
+/* Glow orb in top-right corner — also pushed behind content */
 .verdict-hero::after {
     content: '';
     position: absolute;
@@ -220,6 +223,7 @@ body {
     background: rgba(255, 255, 255, 0.06);
     border-radius: 50%;
     pointer-events: none;
+    z-index: 0;
 }
 
 .verdict-hero.block { box-shadow: 0 8px 32px rgba(212, 32, 32, 0.3), 0 2px 8px rgba(0,0,0,0.15); }
@@ -283,6 +287,7 @@ body {
     flex-direction: column;
     gap: 3px;
     min-width: 0;
+    width: 100%;
 }
 
 .hero-url {

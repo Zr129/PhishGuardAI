@@ -1,9 +1,5 @@
 """
 URLFeatureExtractor — extracts structured features from a URL and link list.
-
-Key naming convention: all keys use PascalCase matching PhiUSIIL dataset
-column names exactly. This means tier checks and FIELD_MAP can reference
-them consistently without any translation layer.
 """
 
 import re
@@ -23,14 +19,28 @@ class URLFeatureExtractor:
         ext = tldextract.extract(url)
         registered_domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
 
+        # DEBUG — log domain extraction so we can confirm tldextract
+        # is parsing the URL correctly. Safe to keep permanently.
+        logger.info(f"[EXTRACTOR] url              = {url!r}")
+        logger.info(f"[EXTRACTOR] tld subdomain    = {ext.subdomain!r}")
+        logger.info(f"[EXTRACTOR] tld domain       = {ext.domain!r}")
+        logger.info(f"[EXTRACTOR] tld suffix       = {ext.suffix!r}")
+        logger.info(f"[EXTRACTOR] registered_domain= {registered_domain!r}")
+
         features = {
             **self._url_features(url, ext),
             **self._link_features(raw_links, registered_domain),
             "registered_domain": registered_domain,
         }
-        return features
 
-    # ── URL string features ───────────────────────────────────
+        # DEBUG — log key derived features (remove before release)
+        logger.info(f"[EXTRACTOR] URLLength     = {features['URLLength']}")
+        logger.info(f"[EXTRACTOR] IsHTTPS       = {features['IsHTTPS']}")
+        logger.info(f"[EXTRACTOR] NoOfSubDomain = {features['NoOfSubDomain']}")
+        logger.info(f"[EXTRACTOR] is_ip         = {features['is_ip']}")
+        logger.info(f"[EXTRACTOR] ExternalRatio = {features['ExternalRatio']} ({features['NoOfExternalRef']}/{features['TotalLinks']} links)")
+
+        return features
 
     def _url_features(self, url: str, ext) -> dict:
         host      = urlparse(url).hostname or ""
@@ -52,7 +62,6 @@ class URLFeatureExtractor:
         is_ip   = int(bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host)))
 
         return {
-            # ── PhiUSIIL column names (PascalCase) ──
             "URLLength":                  url_len,
             "DomainLength":               len(domain),
             "TLDLength":                  len(tld),
@@ -73,15 +82,10 @@ class URLFeatureExtractor:
             "NoOfAmpersandInURL":         url.count("&"),
             "CharContinuationRate":       round(max_run / url_len, 4) if url_len else 0,
             "HasDomainDashes":            int("-" in ext.domain),
-
-            # ── Legacy snake_case aliases used by Tier 1/2 checks ──
-            # Kept so tier checks don't need changing — all point to same values
             "is_ip":             is_ip,
             "subdomain_count":   subdomain_count,
             "has_domain_dashes": int("-" in ext.domain),
         }
-
-    # ── Link features ─────────────────────────────────────────
 
     def _link_features(self, raw_links: List[str], registered_domain: str) -> dict:
         total = external = 0
@@ -101,16 +105,13 @@ class URLFeatureExtractor:
         ratio = round(external / total, 4) if total > 0 else 0.0
 
         return {
-            # PascalCase (for FIELD_MAP / ML)
             "NoOfExternalRef": external,
             "TotalLinks":      total,
             "ExternalRatio":   ratio,
-            # snake_case alias (for tier2_checks)
             "external_ratio":  ratio,
         }
 
 
-# Backwards-compatible module-level function
 _default_extractor = URLFeatureExtractor()
 
 def extract_refined_features(url: str, raw_links: List[str]) -> dict:

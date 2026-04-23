@@ -31,7 +31,7 @@ def build_router(analyser: URLAnalyser, limiter: Limiter) -> APIRouter:
 
         try:
             result: AnalysisResult = analyser.analyse(body)
-            logger.info(f"[RESULT] action={result.action} confidence={result.confidence}")
+            logger.info(f"[RESPONSE] action={result.action} confidence={result.confidence}")
 
             return result
 

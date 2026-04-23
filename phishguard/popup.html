@@ -47,7 +47,7 @@
         <!-- ── Verdict hero card ───────────────────────────── -->
         <div class="verdict-hero idle" id="verdict-hero">
             <!-- Hidden ring element for JS compatibility -->
-            <circle id="ring-fill" style="display:none"/>
+            <span id="ring-fill" style="display:none"></span>
 
             <div class="hero-top">
                 <div class="hero-badge">
@@ -57,8 +57,10 @@
                 <span class="hero-pct" id="risk-pct">—</span>
             </div>
 
-            <div class="hero-domain" id="current-domain">Scanning...</div>
-            <div class="hero-url" id="current-url"></div>
+            <div class="hero-domain-wrap">
+                <div class="hero-domain" id="current-domain">Scanning...</div>
+                <div class="hero-url" id="current-url"></div>
+            </div>
 
             <div class="hero-foot">
                 <div class="hero-bar-track">

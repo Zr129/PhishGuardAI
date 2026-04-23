@@ -291,9 +291,26 @@ class PopupRenderer {
 
     render() {
         chrome.storage.local.get("analysisResult", res => {
+            // DEBUG — log raw storage contents every time popup renders (remove before release)
+            console.log('[POPUP] render() called. Raw storage res:', res);
             const w = res.analysisResult;
-            if (!w?.data)                                                          { this._loading(); return; }
-            if (w.data.prediction === "offline" || w.data.prediction === "error") { this._offline(); return; }
+            console.log('[POPUP] analysisResult wrapper:', w);
+            console.log('[POPUP]   w.url       =', w?.url);
+            console.log('[POPUP]   w.data      =', w?.data ? 'present' : 'MISSING');
+            console.log('[POPUP]   w.data.url    =', w?.data?.url);
+            console.log('[POPUP]   w.data.domain =', w?.data?.domain);
+            console.log('[POPUP]   w.data.action =', w?.data?.action);
+            console.log('[POPUP]   w.timestamp =', w?.timestamp ? new Date(w.timestamp).toISOString() : 'none');
+
+            if (!w?.data) {
+                console.warn('[POPUP] No data in storage — showing loading state');
+                this._loading(); return;
+            }
+            if (w.data.prediction === "offline" || w.data.prediction === "error") {
+                console.warn('[POPUP] Offline/error state — prediction:', w.data.prediction);
+                this._offline(); return;
+            }
+            console.log('[POPUP] Calling _result() with data.url=', w.data.url, 'wrapper.url=', w.url);
             this._result(w.data, w.url, w.timestamp);
         });
     }
@@ -354,18 +371,26 @@ class PopupRenderer {
         // Verdict text per action
         const labels = { block: "Threat Detected", warn: "Suspicious", allow: "Secure", error: "Offline" };
 
-        try { this._domain = new URL(url).hostname.replace(/^www\./, ""); } catch { this._domain = ""; }
+        // Prefer url/domain from the API response (self-describing).
+        // Fall back to the wrapper url (older backend) and finally to "".
+        const effectiveUrl = data.url || url || "";
+        if (data.domain) {
+            this._domain = data.domain.replace(/^www\./, "");
+        } else {
+            try { this._domain = new URL(effectiveUrl).hostname.replace(/^www\./, ""); }
+            catch { this._domain = ""; }
+        }
 
         // Only colour the hero for warn/block — allow stays neutral
-        this._setHeroClass(action === 'allow' && tagged.length === 0 ? 'idle' : action);
+        this._setHeroClass(action);
         this._setHeroIcon(action);
         this._setText("verdictLabel", labels[action] || "Verdict");
         this._setText("domain", this._domain || "Unknown site");
         // Show truncated URL under domain
         if (this._els.urlEl) {
-            const display = (url || "").replace(/^https?:\/\//, "").replace(/^www\./, "");
+            const display = effectiveUrl.replace(/^https?:\/\//, "").replace(/^www\./, "");
             this._els.urlEl.textContent = display.length > 55 ? display.substring(0, 55) + "…" : display;
-            this._els.urlEl.title = url || "";  // full URL on hover
+            this._els.urlEl.title = effectiveUrl;  // full URL on hover
         }
         const pillLabels = { block: "BLOCKED", warn: "CAUTION", allow: "SAFE", safe: "SAFE" };
         this._setStatus(pillLabels[action] || data.prediction.toUpperCase(), action);
@@ -403,7 +428,7 @@ class PopupRenderer {
 
         if (this._els.reportBtn) {
             this._els.reportBtn.style.display = "block";
-            this._els.reportBtn.onclick = () => this._generateReport(data, url);
+            this._els.reportBtn.onclick = () => this._generateReport(data, effectiveUrl);
         }
 
         this._renderFlags(tagged, reasons, conf);
@@ -491,9 +516,7 @@ class PopupRenderer {
             : reasons.map(r => ({ text: r, tier: "HEURISTIC" }));
 
         if (!items.length) {
-            el.innerHTML = conf > 0
-                ? `<div class="flag info"><svg class="flag-icon" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M7 6.5v4M7 5v-.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><div class="flag-body"><span class="flag-text">Minor signals detected</span></div></div>`
-                : `<div class="safe-msg"><svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 7l2 2 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>No threats detected</span></div>`;
+            el.innerHTML = `<div class="safe-msg"><svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 7l2 2 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>No threats detected</span></div>`;
             if (this._els.showMore) this._els.showMore.style.display = "none";
             this._setText("flagCount", "");
             return;

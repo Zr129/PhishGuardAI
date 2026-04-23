@@ -1,9 +1,9 @@
 """
 Lists controller — CRUD endpoints for user blacklist and whitelist.
 
-GET  /lists           → returns both lists
-POST /lists/blacklist → add domain to user blacklist
-POST /lists/whitelist → add domain to user whitelist
+GET    /lists                    → returns both lists
+POST   /lists/blacklist          → add domain to user blacklist
+POST   /lists/whitelist          → add domain to user whitelist
 DELETE /lists/blacklist/{domain} → remove from blacklist
 DELETE /lists/whitelist/{domain} → remove from whitelist
 """
@@ -12,7 +12,6 @@ import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 logger = logging.getLogger("PhishGuard")
 
@@ -21,11 +20,14 @@ class DomainRequest(BaseModel):
     domain: str
 
 
-def build_lists_router(user_list_provider, limiter: Limiter) -> APIRouter:
+def build_lists_router(user_list_provider, limiter: Limiter, rate_limit: str = "60/minute") -> APIRouter:
+    """
+    Rate limit is parametrised so the RATE_LIMIT env var controls it.
+    """
     router = APIRouter(prefix="/lists")
 
     @router.get("")
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
     def get_lists(request: Request):
         """Return both user lists."""
         return {
@@ -34,7 +36,7 @@ def build_lists_router(user_list_provider, limiter: Limiter) -> APIRouter:
         }
 
     @router.post("/blacklist")
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
     def add_blacklist(request: Request, body: DomainRequest):
         added = user_list_provider.add_blacklist(body.domain)
         if not added:
@@ -42,7 +44,7 @@ def build_lists_router(user_list_provider, limiter: Limiter) -> APIRouter:
         return {"status": "added", "domain": body.domain, "list": "blacklist"}
 
     @router.post("/whitelist")
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
     def add_whitelist(request: Request, body: DomainRequest):
         added = user_list_provider.add_whitelist(body.domain)
         if not added:
@@ -50,7 +52,7 @@ def build_lists_router(user_list_provider, limiter: Limiter) -> APIRouter:
         return {"status": "added", "domain": body.domain, "list": "whitelist"}
 
     @router.delete("/blacklist/{domain}")
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
     def remove_blacklist(request: Request, domain: str):
         removed = user_list_provider.remove_blacklist(domain)
         if not removed:
@@ -58,7 +60,7 @@ def build_lists_router(user_list_provider, limiter: Limiter) -> APIRouter:
         return {"status": "removed", "domain": domain, "list": "blacklist"}
 
     @router.delete("/whitelist/{domain}")
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
     def remove_whitelist(request: Request, domain: str):
         removed = user_list_provider.remove_whitelist(domain)
         if not removed:

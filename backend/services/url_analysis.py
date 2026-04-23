@@ -1,15 +1,5 @@
 """
 URLAnalyser — lean orchestrator.
-
-Responsibilities:
-  - Iterate the injected check pipeline
-  - Aggregate CheckResults
-  - Decide BLOCK / WARN / ALLOW
-  - Return a typed AnalysisResult
-
-FIX: ALLOW no longer silently discards brand warning reasons.
-FIX: ML score is weighted (0.6x) before adding to heuristic score
-     to prevent the two differently-scaled systems from over-adding.
 """
 
 import logging
@@ -23,46 +13,51 @@ from utils.url_features import URLFeatureExtractor
 logger = logging.getLogger("PhishGuard")
 logging.basicConfig(level=logging.INFO)
 
-# ML score weight — prevents raw ML probability score from dominating
-# heuristic scores which use a different scale
 ML_SCORE_WEIGHT = 0.6
 
 
 def sigmoid_confidence(score: float, max_score: float = 14.0) -> int:
-    """Sigmoid curve: maps raw score → calibrated 0–95% confidence."""
     normalised = (score / max_score) * 10 - 5
     prob       = 1 / (1 + math.exp(-normalised))
     return min(round(prob * 100), 95)
 
 
 class URLAnalyser:
-    """
-    Orchestrates the phishing detection pipeline.
-    All dependencies injected via constructor (DIP).
-    """
 
     def __init__(self, checks: List[BaseCheck], extractor: URLFeatureExtractor):
         self._checks    = checks
         self._extractor = extractor
 
     def analyse(self, data: URLRequest) -> AnalysisResult:
-        logger.info("========== NEW ANALYSIS ==========")
-        logger.info(f"[URL] {data.url}")
+        logger.info("=" * 60)
+        logger.info("[ANALYSER] Starting analysis")
+        logger.info(f"[ANALYSER] Input url    = {data.url!r}")
+        logger.info(f"[ANALYSER] Input domain = {data.domain!r}")
 
         refined = self._extractor.extract(data.url, data.links)
-        logger.info(f"[DOMAIN] {refined.get('registered_domain', '')}")
+
+        domain = refined.get("registered_domain") or data.domain or ""
+
+        # DEBUG — confirm domain resolution (safe to keep permanently)
+        logger.info(f"[ANALYSER] refined registered_domain = {refined.get('registered_domain')!r}")
+        logger.info(f"[ANALYSER] resolved domain           = {domain!r}")
 
         cumulative_score   = 0.0
         cumulative_reasons: List[str] = []
-        tagged_reasons:     List[dict] = []   # [{text, tier}]
+        tagged_reasons:     List[dict] = []
 
         for check in self._checks:
             result: CheckResult = check.run(data, refined)
 
+            # DEBUG — log every check result (remove before release — verbose)
+            if result.triggered:
+                logger.info(f"[CHECK] {check.__class__.__name__} TRIGGERED  score={result.score}  block={result.is_block}  reasons={result.reasons}")
+            else:
+                logger.info(f"[CHECK] {check.__class__.__name__} passed")
+
             if not result.triggered:
                 continue
 
-            # Apply weighting to ML scores to prevent scale mismatch
             weight = ML_SCORE_WEIGHT if result.tier == "ML" else 1.0
             cumulative_score += result.score * weight
 
@@ -70,42 +65,54 @@ class URLAnalyser:
                 cumulative_reasons.append(reason)
                 tagged_reasons.append({"text": reason, "tier": result.tier or "RULE"})
 
-            # Whitelist short-circuit — score of -99 means instant ALLOW
             if result.score == -99:
-                logger.info(f"[ALLOW] WhitelistCheck — trusted domain")
-                return self._make_result(
-                    "ALLOW", "safe", 0, result.reasons, tagged_reasons
-                )
+                logger.info(f"[ANALYSER] WHITELIST short-circuit — returning ALLOW")
+                return self._make_result("ALLOW", "safe", 0, [], [], data.url, domain)
 
             if result.is_block:
-                logger.info(f"[BLOCK] {check.__class__.__name__}")
+                logger.info(f"[ANALYSER] HARD BLOCK by {check.__class__.__name__}")
                 return self._make_result(
                     "BLOCK", "phishing",
-                    cumulative_score, cumulative_reasons, tagged_reasons
+                    cumulative_score, cumulative_reasons, tagged_reasons,
+                    data.url, domain,
                 )
 
         score = round(cumulative_score)
-        logger.info(f"[SCORE] {score}")
+        logger.info(f"[ANALYSER] Final cumulative score = {score}")
 
         if score >= 9:
-            logger.info("[DECISION] BLOCK")
-            return self._make_result("BLOCK", "phishing", score, cumulative_reasons, tagged_reasons)
+            decision = "BLOCK"
+        elif score >= 6:
+            decision = "WARN"
+        else:
+            decision = "ALLOW"
 
-        if score >= 5:
-            logger.info("[DECISION] WARN")
-            return self._make_result("WARN", "suspicious", score, cumulative_reasons, tagged_reasons)
+        logger.info(f"[ANALYSER] Decision = {decision}")
 
-        logger.info("[DECISION] ALLOW")
-        # Pass through any informational reasons (e.g. brand warnings) even on ALLOW
+        prediction = {"BLOCK": "phishing", "WARN": "suspicious", "ALLOW": "safe"}[decision]
         info_reasons = [r for r in cumulative_reasons if r]
-        return self._make_result("ALLOW", "safe", score, info_reasons, tagged_reasons)
+
+        result = self._make_result(decision, prediction, score, info_reasons, tagged_reasons, data.url, domain)
+
+        # DEBUG — confirm url/domain are on the final result (remove before release)
+        logger.info(f"[ANALYSER] Result url    = {result.url!r}")
+        logger.info(f"[ANALYSER] Result domain = {result.domain!r}")
+        logger.info(f"[ANALYSER] Result action = {result.action!r}  confidence={result.confidence}")
+        logger.info("=" * 60)
+
+        return result
 
     @staticmethod
-    def _make_result(action, prediction, score, reasons, tagged_reasons=None) -> AnalysisResult:
+    def _make_result(
+        action, prediction, score, reasons,
+        tagged_reasons=None, url: str = "", domain: str = "",
+    ) -> AnalysisResult:
         return AnalysisResult(
             action=action,
             prediction=prediction,
             confidence=sigmoid_confidence(score),
             reasons=reasons,
             tagged_reasons=tagged_reasons or [],
+            url=url,
+            domain=domain,
         )

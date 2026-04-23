@@ -151,14 +151,26 @@ class UserListProvider:
             self._whitelist = set()
 
     def _save(self):
+        """
+        Atomic write: serialise to a sibling temp file, then os.replace().
+        Prevents corruption if the process is killed mid-write.
+        """
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         with self._lock:
             data = {
                 "blacklist": sorted(self._blacklist),
                 "whitelist": sorted(self._whitelist),
             }
+        tmp_path = f"{self._path}.tmp"
         try:
-            with open(self._path, "w") as f:
+            with open(tmp_path, "w") as f:
                 json.dump(data, f, indent=2)
+            os.replace(tmp_path, self._path)   # atomic on POSIX & Windows
         except Exception as e:
             logger.error(f"[USERLIST] Save failed: {e}")
+            # Best-effort cleanup of stale temp file
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except OSError:
+                pass

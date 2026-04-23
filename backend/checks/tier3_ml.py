@@ -91,19 +91,25 @@ class MLCheck(BaseCheck):
                     vector[col] = 0
 
             X         = pd.DataFrame([vector], columns=FEATURE_COLS)
-            
+            logger.info(f"[ML] Feature vector: IsHTTPS={vector.get('IsHTTPS')} "
+                        f"NoOfImage={vector.get('NoOfImage')} NoOfSelfRef={vector.get('NoOfSelfRef')} "
+                        f"NoOfJS={vector.get('NoOfJS')} NoOfCSS={vector.get('NoOfCSS')} "
+                        f"HasCopyrightInfo={vector.get('HasCopyrightInfo')} "
+                        f"HasSocialNet={vector.get('HasSocialNet')} "
+                        f"HasDescription={vector.get('HasDescription')}")
+
             base_prob = self._model.predict_proba(X)[0][1]
 
             # Only continue if ML sees meaningful phishing signal
             if base_prob < MIN_TRIGGER_PROB:
-                logger.info(f"[ML] Low probability ({base_prob:.3f}) — silent pass")
+                logger.info(f"[ML] base_prob={base_prob:.3f} — below threshold, silent pass")
                 return CheckResult.clean()
 
             adj_prob, custom_reasons = self._preprocessor.adjust(base_prob, data, refined)
 
             score = round(adj_prob * 14)
 
-            logger.info(f"[ML] base={base_prob:.3f} → adjusted={adj_prob:.3f} score={score}")
+            logger.info(f"[ML] base_prob={base_prob:.3f} → adjusted={adj_prob:.3f} score={score}")
 
             # Generate human-readable reasons from top contributing features
             reasons = self._explain(vector, adj_prob) + custom_reasons

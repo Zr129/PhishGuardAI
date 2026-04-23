@@ -1,134 +1,82 @@
 """
-Report controller — generates downloadable HTML security report.
+Report controller — generates a downloadable PDF security report.
 
 POST /report
-  Body: { url, analysis_result, page_data }
-  Returns: HTML file as attachment
+  Body: ReportRequest (URLRequest fields + AnalysisResult fields)
+  Returns: PDF file as attachment
+
+503 — GROQ_API_KEY not set
+500 — WeasyPrint not installed or PDF generation failed
 """
 
 import logging
+import re
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel
+from fastapi.responses import Response
 from slowapi import Limiter
-from slowapi.util import get_remote_address
-from typing import Any, Dict, List, Optional
+
+from models.models import URLRequest, AnalysisResult
 
 logger = logging.getLogger("PhishGuard")
 
 
-class ReportRequest(BaseModel):
+class ReportRequest(URLRequest, AnalysisResult):
     """
-    The extension sends the full analysis result and page data
-    so the report can include everything without re-analysing.
-    """
-    # Analysis result fields
-    action:         str
-    prediction:     str
-    confidence:     int
-    reasons:        List[str]
-    tagged_reasons: List[Dict[str, Any]] = []
+    Request body for /report.
 
-    # Page data (URLRequest fields)
-    url:                        str
-    domain:                     str
-    title:                      str = ""
-    is_https:                   bool = True
-    is_main_frame:              bool = True
-    has_password_field:         bool = False
-    is_hidden_submission:       bool = False
-    action_to_different_domain: bool = False
-    has_submit_button:          bool = False
-    has_hidden_fields:          bool = False
-    has_favicon:                bool = False
-    has_description:            bool = False
-    has_copyright:              bool = False
-    has_social_net:             bool = False
-    has_bank_keywords:          bool = False
-    has_pay_keywords:           bool = False
-    has_crypto_keywords:        bool = False
-    no_of_self_ref:             int  = 0
-    no_of_images:               int  = 0
-    no_of_js:                   int  = 0
-    no_of_css:                  int  = 0
-    total_anchors:              int  = 0
-    empty_anchors:              int  = 0
-    links:                      List[str] = []
+    Composes URLRequest + AnalysisResult so the report endpoint has
+    every field it needs without re-running the analysis pipeline.
+    The two parents share `url` and `domain` — Pydantic resolves them
+    to a single field via MRO.
+    """
+    pass
+
+
+# Safe characters for the download filename domain segment
+_FILENAME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_domain_for_filename(domain: str) -> str:
+    return _FILENAME_SAFE_RE.sub("_", domain or "unknown")[:60]
 
 
 def build_report_router(report_generator, extractor, limiter: Limiter) -> APIRouter:
     router = APIRouter()
 
-    @router.post("/report", response_class=HTMLResponse)
-    @limiter.limit("10/minute")   # lower limit — LLM calls are expensive
+    @router.post("/report")
+    @limiter.limit("10/minute")   # Lower limit — LLM + PDF generation is expensive
     async def generate_report(request: Request, body: ReportRequest):
-        logger.info(f"[REPORT] Generating report for {body.url}")
+        logger.info(f"[REPORT] Request for {body.url}")
 
         try:
-            # Reconstruct URLRequest and AnalysisResult from the body
-            from models.models import URLRequest, AnalysisResult
+            refined     = extractor.extract(body.url, body.links)
+            pdf_bytes   = report_generator.generate(body, body, refined)
 
-            url_request = URLRequest(
-                url=body.url, domain=body.domain, title=body.title,
-                is_https=body.is_https, is_main_frame=body.is_main_frame,
-                has_password_field=body.has_password_field,
-                is_hidden_submission=body.is_hidden_submission,
-                action_to_different_domain=body.action_to_different_domain,
-                has_submit_button=body.has_submit_button,
-                has_hidden_fields=body.has_hidden_fields,
-                has_favicon=body.has_favicon,
-                has_description=body.has_description,
-                has_copyright=body.has_copyright,
-                has_social_net=body.has_social_net,
-                has_bank_keywords=body.has_bank_keywords,
-                has_pay_keywords=body.has_pay_keywords,
-                has_crypto_keywords=body.has_crypto_keywords,
-                no_of_self_ref=body.no_of_self_ref,
-                no_of_images=body.no_of_images,
-                no_of_js=body.no_of_js,
-                no_of_css=body.no_of_css,
-                total_anchors=body.total_anchors,
-                empty_anchors=body.empty_anchors,
-                links=body.links,
-            )
+            domain_safe = _safe_domain_for_filename(body.domain)
+            ts          = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+            filename    = f"phishguard_{domain_safe}_{ts}.pdf"
 
-            analysis_result = AnalysisResult(
-                action=body.action,
-                prediction=body.prediction,
-                confidence=body.confidence,
-                reasons=body.reasons,
-                tagged_reasons=body.tagged_reasons,
-            )
+            logger.info(f"[REPORT] Sending PDF: {filename} ({len(pdf_bytes):,} bytes)")
 
-            # Re-extract URL features for the report context
-            refined = extractor.extract(body.url, body.links)
-
-            # Generate report — returns (pdf_bytes | None, html_string)
-            pdf_bytes, html = report_generator.generate(url_request, analysis_result, refined)
-
-            domain   = body.domain.replace(".", "_")
-            ts       = datetime.utcnow().strftime("%Y%m%d_%H%M")
-
-            if pdf_bytes:
-                filename = f"phishguard_{domain}_{ts}.pdf"
-                return Response(
-                    content=pdf_bytes,
-                    media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-                )
-
-            filename = f"phishguard_{domain}_{ts}.html"
-            return HTMLResponse(
-                content=html,
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
         except ValueError as e:
-            # GROQ_API_KEY not set
+            # GROQ_API_KEY not configured
+            logger.warning(f"[REPORT] Config error: {e}")
             raise HTTPException(status_code=503, detail=str(e))
+
+        except RuntimeError as e:
+            # WeasyPrint not installed or PDF generation failed
+            logger.error(f"[REPORT] PDF generation error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
         except Exception as e:
             logger.error(traceback.format_exc())
             raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")

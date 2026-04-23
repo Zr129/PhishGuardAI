@@ -1,6 +1,7 @@
 {
   "blacklist": [],
   "whitelist": [
+    "google.com",
     "imdb.com"
   ]
 }

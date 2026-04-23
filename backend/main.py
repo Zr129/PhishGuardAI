@@ -1,11 +1,12 @@
 """
 Composition Root — only place concrete classes are wired together.
-Configuration loaded from environment variables via .env file.
+Configuration loaded from backend/.env explicitly so startup is independent
+of the current working directory.
 """
 
-import json
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,9 +16,10 @@ from slowapi.errors import RateLimitExceeded
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    ENV_PATH = Path(__file__).resolve().parent / ".env"
+    load_dotenv(dotenv_path=ENV_PATH)
 except ImportError:
-    pass
+    ENV_PATH = None
 
 from checks.tier1_checks import (
     BlacklistCheck, IPAddressCheck, IFrameTrapCheck,
@@ -26,7 +28,7 @@ from checks.tier1_checks import (
 from checks.tier2_checks import HeuristicCheck
 from checks.tier3_ml import MLCheck
 from checks.whitelist_check import WhitelistCheck, UserBlacklistCheck
-from providers.blacklist import FileBlacklist, LiveFeedBlacklist
+from providers.blacklist import LiveFeedBlacklist
 from providers.user_lists import UserListProvider
 from services.url_analysis import URLAnalyser
 from utils.url_features import URLFeatureExtractor
@@ -39,9 +41,6 @@ from utils.whois_lookup import DomainIntelligence
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PhishGuard")
 
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-BRANDS_PATH = os.path.join(BASE_DIR, "config", "brands.json")
-
 # ── Config from environment ───────────────────────────────
 
 EXTENSION_ID  = os.getenv("EXTENSION_ID", "jalianmoiocjfglkikmfdpaphlafccic")
@@ -51,45 +50,44 @@ REFRESH_HOURS = float(os.getenv("BLACKLIST_REFRESH_HOURS", "6"))
 
 ALLOWED_ORIGINS = [f"chrome-extension://{EXTENSION_ID}"]
 
+logger.info("=" * 60)
+logger.info("[STARTUP] PhishGuard backend starting")
+logger.info(f"[STARTUP] ENV_PATH      = {ENV_PATH}")
+logger.info(f"[STARTUP] EXTENSION_ID  = {EXTENSION_ID}")
+logger.info(f"[STARTUP] RATE_LIMIT    = {RATE_LIMIT}")
+logger.info(f"[STARTUP] FEED_URL      = {FEED_URL}")
+logger.info(f"[STARTUP] REFRESH_HOURS = {REFRESH_HOURS}")
+logger.info(f"[STARTUP] ALLOWED_ORIGINS = {ALLOWED_ORIGINS}")
+logger.info(f"[STARTUP] GROQ key present = {bool(os.getenv('GROQ_API_KEY'))}")
+logger.info("=" * 60)
+
 if not os.getenv("EXTENSION_ID"):
     logger.warning("[SECURITY] EXTENSION_ID not set — using default. Set in .env before deploying.")
 
-# ── Load configs ──────────────────────────────────────────
-
-def _load_brands() -> dict | None:
-    try:
-        with open(BRANDS_PATH) as f:
-            brands = json.load(f)
-        logger.info(f"[INIT] Loaded {len(brands)} brands")
-        return brands
-    except FileNotFoundError:
-        return None
-
 # ── Assemble pipeline ─────────────────────────────────────
 
-#brands             = _load_brands()
 blacklist_provider = LiveFeedBlacklist(feed_url=FEED_URL, refresh_hours=REFRESH_HOURS)
 user_lists         = UserListProvider()
 
 checks = [
-    # Tier 0 — whitelist short-circuit (runs first)
     WhitelistCheck(user_lists),
-    # Tier 1 — hard rules
     UserBlacklistCheck(user_lists),
     BlacklistCheck(blacklist_provider),
     IPAddressCheck(),
     IFrameTrapCheck(),
     InsecurePasswordCheck(),
     BrandImpersonationCheck(),
-    # Tier 2 — heuristics
     HeuristicCheck(),
-    # Tier 3 — ML
     MLCheck(),
 ]
 
 extractor        = URLFeatureExtractor()
 analyser         = URLAnalyser(checks=checks, extractor=extractor)
 report_generator = ReportGenerator(DomainIntelligence())
+
+logger.info(f"[STARTUP] Pipeline: {len(checks)} checks loaded:")
+for i, c in enumerate(checks):
+    logger.info(f"[STARTUP]   [{i}] {c.__class__.__name__}")
 
 # ── FastAPI ───────────────────────────────────────────────
 
@@ -107,6 +105,6 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-app.include_router(build_router(analyser, limiter))
-app.include_router(build_lists_router(user_lists, limiter))
+app.include_router(build_router(analyser, limiter, RATE_LIMIT))
+app.include_router(build_lists_router(user_lists, limiter, RATE_LIMIT))
 app.include_router(build_report_router(report_generator, extractor, limiter))

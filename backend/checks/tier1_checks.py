@@ -128,7 +128,7 @@ class BrandImpersonationCheck(BaseCheck):
         "paypal", "amazon", "microsoft", "google", "netflix",
         "apple", "facebook", "instagram", "twitter", "linkedin",
         "dropbox", "steam", "ebay", "hsbc", "barclays", "lloyds",
-        "paloalto", "spotify", "tiktok", "snapchat", "discord",
+        "paloaltonetworks", "spotify", "tiktok", "snapchat", "discord",
     }
 
     def run(self, data: URLRequest, refined: dict) -> CheckResult:

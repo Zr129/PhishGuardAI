@@ -156,28 +156,31 @@ class FeatureExtractor {
                 no_of_images:  document.querySelectorAll("img").length,
                 no_of_css:     document.querySelectorAll("link[rel='stylesheet']").length,
                 no_of_js:      document.querySelectorAll("script[src]").length,
+
+                // Auto-download: any <a download> pointing to an executable/archive
+                has_auto_download: Array.from(document.querySelectorAll("a[download]"))
+                    .some(a => /\.(exe|zip|msi|dmg|pkg|bat|cmd|ps1|vbs|jar)$/i.test(a.href)),
+
+                // Meta refresh: redirect tag in <head>
+                has_meta_refresh: !!document.querySelector("meta[http-equiv='refresh']"),
+
+                // Suspicious scripts: many inline scripts but zero external scripts
+                // Phishing pages often inline everything to avoid external requests
+                has_suspicious_scripts: (() => {
+                    const inline   = document.querySelectorAll("script:not([src])").length;
+                    const external = document.querySelectorAll("script[src]").length;
+                    return inline > 5 && external === 0;
+                })(),
             };
         } catch {
             return {
                 has_bank_keywords: false, has_pay_keywords: false, has_crypto_keywords: false,
                 has_copyright: false, no_of_images: 0, no_of_css: 0, no_of_js: 0,
+                has_auto_download: false, has_meta_refresh: false, has_suspicious_scripts: false,
             };
         }
     }
-
-    _tokenOverlap(a, b) {
-        if (!a || !b) return 0;
-        const tokenise = s => new Set(
-            s.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(Boolean)
-        );
-        const tokA = tokenise(a);
-        const tokB = tokenise(b);
-        if (!tokA.size || !tokB.size) return 0;
-        const shared = [...tokA].filter(t => tokB.has(t)).length;
-        return parseFloat((shared / Math.max(tokA.size, tokB.size)).toFixed(3));
-    }
 }
-
 
 // ─────────────────────────────────────────
 // WarningBanner
@@ -321,7 +324,7 @@ class WarningBanner {
         const btnLeave = document.createElement("button");
         btnLeave.className   = "pg-btn pg-btn-leave";
         btnLeave.textContent = "Leave this page";
-        btnLeave.onclick     = () => history.back();
+        btnLeave.onclick     = () => chrome.runtime.sendMessage({ type: "LEAVE_SITE" });
 
         const btnDetails = document.createElement("button");
         btnDetails.className   = "pg-btn pg-btn-details";

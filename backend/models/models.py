@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Optional, Dict, Any
 
 
@@ -34,17 +34,23 @@ class LinkContext(BaseModel):
 
 
 class ContentSignals(BaseModel):
-    has_bank_keywords:   Optional[bool] = False
-    has_pay_keywords:    Optional[bool] = False
-    has_crypto_keywords: Optional[bool] = False
-    has_copyright:       Optional[bool] = False
-    no_of_images:        Optional[int]  = 0
-    no_of_css:           Optional[int]  = 0
-    no_of_js:            Optional[int]  = 0
+    has_bank_keywords:      Optional[bool] = False
+    has_pay_keywords:       Optional[bool] = False
+    has_crypto_keywords:    Optional[bool] = False
+    has_copyright:          Optional[bool] = False
+    no_of_images:           Optional[int]  = 0
+    no_of_css:              Optional[int]  = 0
+    no_of_js:               Optional[int]  = 0
+    has_auto_download:      Optional[bool] = False
+    has_meta_refresh:       Optional[bool] = False
+    has_suspicious_scripts: Optional[bool] = False
 
 
 class URLRequest(PageMeta, FormContext, LinkContext, ContentSignals):
     """Full request from the extension. extra=ignore drops unknown fields safely."""
+
+    # Pydantic v2 config syntax — replaces the v1 `class Config` style
+    model_config = ConfigDict(extra="ignore")
 
     @field_validator("url")
     @classmethod
@@ -62,11 +68,15 @@ class URLRequest(PageMeta, FormContext, LinkContext, ContentSignals):
             if isinstance(link, str)
         ]
 
-    class Config:
-        extra = "ignore"
-
 
 class AnalysisResult(BaseModel):
+    """
+    Response model for /analyse.
+
+    `url` and `domain` are echoed back from the request so that any
+    consumer (popup, report endpoint, future integrations) can render
+    or persist the result without needing the original request payload.
+    """
     action:         str
     prediction:     str
     confidence:     int
@@ -74,3 +84,7 @@ class AnalysisResult(BaseModel):
     tagged_reasons: List[Dict[str, Any]] = Field(default_factory=list)
     # tagged_reasons: [{text: str, tier: "RULE"|"HEURISTIC"|"ML"}]
     # Allows the popup to show tier badges per reason
+
+    # Echo the analysed target so the response is self-describing
+    url:    str = ""
+    domain: str = ""
