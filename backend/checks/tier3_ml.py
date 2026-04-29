@@ -23,7 +23,7 @@ MODEL_PATH = os.path.join(
     "ml", "model.joblib"
 )
 
-MIN_TRIGGER_PROB  = 0.15   # below this ML stays silent — avoids noise on clean pages
+MIN_TRIGGER_PROB  = 0.12   # below this ML stays silent — avoids noise on clean pages
 BLOCK_THRESHOLD   = 0.85   # above this ML alone can hard-block
 
 # Human-readable explanations for each ML feature
@@ -45,6 +45,7 @@ FEATURE_EXPLANATIONS = {
     "HasSubmitButton":       ("No submit button found", "Form structure is unusual"),
     "NoOfSubDomain":         ("Multiple subdomains", "Excessive subdomain depth detected"),
 }
+
 
 
 class MLCheck(BaseCheck):
@@ -84,10 +85,11 @@ class MLCheck(BaseCheck):
         try:
             from ml.features import FIELD_MAP, FEATURE_COLS
             vector = {}
-            for col, expr in FIELD_MAP.items():
+            for col, extractor in FIELD_MAP.items():
                 try:
-                    vector[col] = eval(expr)  # noqa: S307
-                except Exception:
+                    vector[col] = extractor(data, refined)
+                except Exception as e:
+                    logger.error(f"[ML ERROR] Feature {col} failed: {e}")
                     vector[col] = 0
 
             X         = pd.DataFrame([vector], columns=FEATURE_COLS)
@@ -170,7 +172,10 @@ class MLCheck(BaseCheck):
             "NoOfSelfRef":           lambda v: v == 0,
             "NoOfJS":                lambda v: v < 2 or v > 30,
             "NoOfCSS":               lambda v: v < 1 or v > 20,
-            "HasDescription":        lambda v: v == 0,
+            # HasDescription intentionally omitted — missing meta description is
+            # too weak a signal on its own and causes false positives on legitimate
+            # government/institutional sites. The feature still influences the ML
+            # model's probability; it just won't surface as a user-facing reason.
             "HasSocialNet":          lambda v: v == 0,
             "HasCopyrightInfo":      lambda v: v == 0,
             "DomainTitleMatchScore": lambda v: v < 0.1,

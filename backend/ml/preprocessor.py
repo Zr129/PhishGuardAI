@@ -22,6 +22,15 @@ _REASON_MAP = {
 
 _SKIP_IF_TIER2_COVERS = {"IsHiddenSubmission"}
 
+# Government and institutional TLDs — ML model is undertrained on these
+# (PhiUSIIL dataset is commercial-heavy). A dampener prevents false positives
+# on legitimate public-sector sites that may lack meta descriptions etc.
+_TRUSTED_TLDS = {
+    ".gov.uk", ".gov", ".ac.uk", ".nhs.uk", ".police.uk",
+    ".mil", ".edu",
+}
+_TRUSTED_TLD_DAMPENER = -0.25
+
 
 class CustomSignalPreprocessor:
     """
@@ -40,6 +49,18 @@ class CustomSignalPreprocessor:
         prob = base_prob
         reasons = []
         existing_reasons = existing_reasons or []
+
+        # Dampen ML probability for verified government/institutional TLDs.
+        # The PhiUSIIL training dataset is commercial-heavy so the model
+        # under-represents public-sector sites and over-flags them when they
+        # lack signals like meta descriptions that are common in commercial sites.
+        registered = refined.get("registered_domain", "")
+        if any(registered.endswith(tld) for tld in _TRUSTED_TLDS):
+            prob = max(prob + _TRUSTED_TLD_DAMPENER, 0.0)
+            logger.info(
+                f"[PREPROCESS] Institutional TLD dampener applied: "
+                f"'{registered}' → prob now {prob:.3f}"
+            )
 
         for field, extractor in CUSTOM_FIELDS.items():
             if field in _SKIP_IF_TIER2_COVERS:

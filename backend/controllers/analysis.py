@@ -17,15 +17,14 @@ from services.url_analysis import URLAnalyser
 logger = logging.getLogger("PhishGuard")
 
 
-def build_router(analyser: URLAnalyser, limiter: Limiter) -> APIRouter:
-    """
-    Factory function that returns a configured APIRouter.
-    Binds the injected analyser into the route handler via closure.
-    """
+def build_router(analyser: URLAnalyser, limiter: Limiter, rate_limit: str) -> APIRouter:
+
+    
     router = APIRouter()
 
     @router.post("/analyse", response_model=AnalysisResult)
-    @limiter.limit("60/minute")
+    @limiter.limit(rate_limit)
+
     def analyse_url_endpoint(request: Request, body: URLRequest):
         logger.info(f"[REQUEST] {body.url}")
 

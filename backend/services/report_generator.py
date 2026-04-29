@@ -1,13 +1,14 @@
 """
-ReportGenerator — JSON-first LLM report rendered to PDF via WeasyPrint.
+ReportGenerator — JSON-first LLM report rendered to PDF via WeasyPrint,
+with automatic HTML fallback if WeasyPrint is unavailable.
 
 Pipeline:
   1. WHOIS lookup via DomainIntelligence
   2. Build structured context string from all page data + detection flags
-  3. One-shot LLM prompt (llama-3.3-70b-versatile) → rich JSON analysis
-  4. Jinja2 renders JSON into a self-contained, print-optimised HTML template
-  5. WeasyPrint converts HTML → PDF bytes
-  6. Returns pdf_bytes (raises if WeasyPrint not installed)
+  3. One-shot LLM prompt (gpt-oss-120b via Groq) → rich JSON analysis
+  4. Jinja2 renders JSON into a self-contained HTML report
+  5. WeasyPrint converts HTML → PDF bytes (falls back to HTML if unavailable)
+  6. Returns (bytes, content_type) — "application/pdf" or "text/html"
 
 LLM JSON schema:
   {
@@ -33,7 +34,7 @@ from utils.whois_lookup import DomainIntelligence
 
 logger = logging.getLogger("PhishGuard")
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"  # upgraded from llama-3.3-70b-versatile — higher quality JSON output
 
 
 def _get_groq_api_key() -> str:
@@ -639,11 +640,12 @@ class ReportGenerator:
         data:    URLRequest,
         result:  AnalysisResult,
         refined: dict,
-    ) -> bytes:
+    ) -> tuple[bytes, str]:
         """
-        Returns PDF bytes.
+        Returns (report_bytes, content_type).
+        content_type is "application/pdf" if WeasyPrint succeeded,
+        or "text/html" if WeasyPrint is unavailable (HTML fallback).
         Raises ValueError if GROQ_API_KEY not set.
-        Raises RuntimeError if WeasyPrint is not installed.
         """
         groq_api_key = _get_groq_api_key()
         if not groq_api_key:
@@ -671,21 +673,22 @@ class ReportGenerator:
         # Step 4 — Render HTML
         html = self._render_html(data, result, refined, whois, analysis)
 
-        # Step 5 — Convert to PDF (required — no HTML fallback)
-        pdf_bytes = self._render_pdf(html)
-        logger.info(f"[REPORT] PDF generated — {len(pdf_bytes):,} bytes")
+        # Step 5 — Try PDF, fall back to HTML
+        report_bytes, content_type = self._render_output(html, domain)
+        logger.info(f"[REPORT] Output: {content_type} — {len(report_bytes):,} bytes")
 
-        return pdf_bytes
+        return report_bytes, content_type
 
     def _call_llm(self, context: str, groq_api_key: str) -> dict:
         from langchain_groq import ChatGroq
         from langchain_core.messages import SystemMessage, HumanMessage
+        import re
 
         llm = ChatGroq(
             model=MODEL,
             api_key=groq_api_key,
-            temperature=0.15,   # Lower temp = more consistent, factual output
-            max_tokens=2048,    # More tokens for richer analysis
+            temperature=0.15,
+            max_tokens=4096,    # GPT-OSS 120B uses reasoning tokens — needs more headroom
         )
 
         messages = [
@@ -695,6 +698,9 @@ class ReportGenerator:
 
         response = llm.invoke(messages)
         raw = response.content.strip()
+
+        # Strip <think>...</think> reasoning blocks (GPT-OSS reasoning models)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
 
         # Strip markdown code fences if model wraps response
         if raw.startswith("```"):
@@ -795,25 +801,23 @@ class ReportGenerator:
         return Template(_HTML_TEMPLATE).render(**ctx)
 
     @staticmethod
-    def _render_pdf(html: str) -> bytes:
+    def _render_output(html: str, domain: str) -> tuple[bytes, str]:
         """
-        Convert HTML to PDF using pdfkit + wkhtmltopdf.
+        Try WeasyPrint → PDF first.
+        Falls back to HTML bytes if WeasyPrint is not installed or fails.
+        Returns (bytes, content_type).
         """
-        import pdfkit
-
+        # ── Attempt WeasyPrint (works on Linux/Oracle, optional on Windows) ──
         try:
-            config = pdfkit.configuration(
-                wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-            )
+            from weasyprint import HTML as WeasyprintHTML
+            pdf_bytes = WeasyprintHTML(string=html).write_pdf()
+            logger.info(f"[REPORT] WeasyPrint PDF generated — {len(pdf_bytes):,} bytes")
+            return pdf_bytes, "application/pdf"
+        except ImportError:
+            logger.info("[REPORT] WeasyPrint not installed — falling back to HTML")
         except Exception as e:
-            raise RuntimeError(
-                "wkhtmltopdf not found. Ensure it is installed at "
-                r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
-            ) from e
+            logger.warning(f"[REPORT] WeasyPrint failed ({e}) — falling back to HTML")
 
-        try:
-            pdf_bytes = pdfkit.from_string(html, False, configuration=config)
-            return pdf_bytes
-        except Exception as e:
-            logger.error(f"[REPORT] PDF render error (pdfkit): {e}")
-            raise RuntimeError(f"PDF generation failed: {e}") from e
+        # ── HTML fallback — always works, no dependencies ────────────────────
+        logger.info(f"[REPORT] Returning HTML report for {domain}")
+        return html.encode("utf-8"), "text/html"

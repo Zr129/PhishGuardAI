@@ -128,9 +128,9 @@ class TestHeuristicCheck:
     # ── High external link ratio ────────────────────────────────────
 
     def test_high_external_ratio_scores_2(self, make_request, make_refined):
-        """External ratio > 0.9 with > 15 anchors = score +2."""
-        data    = make_request(total_anchors=20)
-        refined = make_refined(external_ratio=0.95, ExternalRatio=0.95)
+        """External ratio > 0.8 with > 5 anchors = score +2."""
+        data    = make_request(total_anchors=10)
+        refined = make_refined(external_ratio=0.85, ExternalRatio=0.85)
 
         result = self.check.run(data, refined)
 
@@ -138,13 +138,22 @@ class TestHeuristicCheck:
         assert any("external" in r.lower() for r in result.reasons)
 
     def test_high_external_ratio_not_enough_anchors(self, make_request, make_refined):
-        """External ratio > 0.9 but only 10 anchors — should not score."""
-        data    = make_request(total_anchors=10)
+        """External ratio > 0.8 but only 4 anchors — below threshold of 5, should not score."""
+        data    = make_request(total_anchors=4)
         refined = make_refined(external_ratio=0.95, ExternalRatio=0.95)
 
         result = self.check.run(data, refined)
 
         assert not any("external" in r.lower() for r in result.reasons)
+
+    def test_high_external_ratio_enough_anchors(self, make_request, make_refined):
+        """External ratio > 0.8 with 6 anchors — meets threshold of 5, should score."""
+        data    = make_request(total_anchors=6)
+        refined = make_refined(external_ratio=0.85, ExternalRatio=0.85)
+
+        result = self.check.run(data, refined)
+
+        assert any("external" in r.lower() for r in result.reasons)
 
     # ── Form analysis ───────────────────────────────────────────────
 
@@ -215,8 +224,10 @@ class TestHeuristicCheck:
 
     def test_combined_signals_accumulate(self, make_request, make_refined):
         """
-        Multiple signals should accumulate correctly.
-        @ URL (+2) + hidden+cross-domain form (+4) = score 6 → WARN territory.
+        Multiple signals should accumulate correctly including stacking.
+        @ URL (+2) + hidden+cross-domain form (+4) = 6 base.
+        Signal stacking: score>=5 with password (+2) + @ with password (+1) = +3.
+        Total = 9.
         """
         data    = make_request(
             url="https://user@localhost/login",
@@ -229,7 +240,7 @@ class TestHeuristicCheck:
         result = self.check.run(data, refined)
 
         assert result.triggered is True
-        assert result.score     == 6
+        assert result.score     == 9
 
     def test_is_block_always_false_for_heuristics(self, make_request, make_refined):
         """

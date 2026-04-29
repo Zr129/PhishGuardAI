@@ -1,12 +1,12 @@
 """
-Report controller — generates a downloadable PDF security report.
+Report controller — generates a downloadable security report.
 
 POST /report
   Body: ReportRequest (URLRequest fields + AnalysisResult fields)
-  Returns: PDF file as attachment
+  Returns: PDF if WeasyPrint is available, HTML otherwise.
 
 503 — GROQ_API_KEY not set
-500 — WeasyPrint not installed or PDF generation failed
+500 — report generation failed
 """
 
 import logging
@@ -47,23 +47,24 @@ def build_report_router(report_generator, extractor, limiter: Limiter) -> APIRou
     router = APIRouter()
 
     @router.post("/report")
-    @limiter.limit("10/minute")   # Lower limit — LLM + PDF generation is expensive
+    @limiter.limit("10/minute")   # Lower limit — LLM generation is expensive
     async def generate_report(request: Request, body: ReportRequest):
         logger.info(f"[REPORT] Request for {body.url}")
 
         try:
-            refined     = extractor.extract(body.url, body.links)
-            pdf_bytes   = report_generator.generate(body, body, refined)
+            refined              = extractor.extract(body.url, body.links)
+            report_bytes, ctype  = report_generator.generate(body, body, refined)
 
             domain_safe = _safe_domain_for_filename(body.domain)
             ts          = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-            filename    = f"phishguard_{domain_safe}_{ts}.pdf"
+            ext         = "pdf" if ctype == "application/pdf" else "html"
+            filename    = f"phishguard_{domain_safe}_{ts}.{ext}"
 
-            logger.info(f"[REPORT] Sending PDF: {filename} ({len(pdf_bytes):,} bytes)")
+            logger.info(f"[REPORT] Sending {ext.upper()}: {filename} ({len(report_bytes):,} bytes)")
 
             return Response(
-                content=pdf_bytes,
-                media_type="application/pdf",
+                content=report_bytes,
+                media_type=ctype,
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
 
@@ -71,11 +72,6 @@ def build_report_router(report_generator, extractor, limiter: Limiter) -> APIRou
             # GROQ_API_KEY not configured
             logger.warning(f"[REPORT] Config error: {e}")
             raise HTTPException(status_code=503, detail=str(e))
-
-        except RuntimeError as e:
-            # WeasyPrint not installed or PDF generation failed
-            logger.error(f"[REPORT] PDF generation error: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
 
         except Exception as e:
             logger.error(traceback.format_exc())

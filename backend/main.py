@@ -23,7 +23,7 @@ except ImportError:
 
 from checks.tier1_checks import (
     BlacklistCheck, IPAddressCheck, IFrameTrapCheck,
-    InsecurePasswordCheck, BrandImpersonationCheck,
+    InsecurePasswordCheck,
 )
 from checks.tier2_checks import HeuristicCheck
 from checks.tier3_ml import MLCheck
@@ -76,7 +76,6 @@ checks = [
     IPAddressCheck(),
     IFrameTrapCheck(),
     InsecurePasswordCheck(),
-    BrandImpersonationCheck(),
     HeuristicCheck(),
     MLCheck(),
 ]

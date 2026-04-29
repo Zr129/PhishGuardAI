@@ -23,6 +23,9 @@ class FormContext(BaseModel):
     action_to_different_domain: Optional[bool] = False
     has_submit_button:          Optional[bool] = False
     has_hidden_fields:          Optional[bool] = False
+    has_iframe:                 Optional[bool] = False
+    has_hidden_iframe:          Optional[bool] = False
+    has_external_iframe:        Optional[bool] = False
 
 
 class LinkContext(BaseModel):
