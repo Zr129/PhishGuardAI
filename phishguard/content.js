@@ -183,7 +183,7 @@ class FeatureExtractor {
                 has_copyright:       bodyText.includes("©") || bodyText.includes("copyright"),
                 no_of_images:        document.querySelectorAll("img").length,
                 no_of_css:           document.querySelectorAll("link[rel='stylesheet']").length,
-                no_of_js:            document.querySelectorAll("script[src]").length,
+                no_of_js: Array.from(document.querySelectorAll("script[src]")).filter(s => !s.src.startsWith("chrome-extension://")).length,
 
                 has_auto_download: Array.from(document.querySelectorAll("a[download]"))
                     .some(a => /\.(exe|zip|msi|dmg|pkg|bat|cmd|ps1|vbs|jar)$/i.test(a.href)),

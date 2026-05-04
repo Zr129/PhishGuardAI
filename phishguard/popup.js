@@ -291,26 +291,14 @@ class PopupRenderer {
 
     render() {
         chrome.storage.local.get("analysisResult", res => {
-            // DEBUG — log raw storage contents every time popup renders (remove before release)
-            console.log('[POPUP] render() called. Raw storage res:', res);
             const w = res.analysisResult;
-            console.log('[POPUP] analysisResult wrapper:', w);
-            console.log('[POPUP]   w.url       =', w?.url);
-            console.log('[POPUP]   w.data      =', w?.data ? 'present' : 'MISSING');
-            console.log('[POPUP]   w.data.url    =', w?.data?.url);
-            console.log('[POPUP]   w.data.domain =', w?.data?.domain);
-            console.log('[POPUP]   w.data.action =', w?.data?.action);
-            console.log('[POPUP]   w.timestamp =', w?.timestamp ? new Date(w.timestamp).toISOString() : 'none');
 
             if (!w?.data) {
-                console.warn('[POPUP] No data in storage — showing loading state');
                 this._loading(); return;
             }
             if (w.data.prediction === "offline" || w.data.prediction === "error") {
-                console.warn('[POPUP] Offline/error state — prediction:', w.data.prediction);
                 this._offline(); return;
             }
-            console.log('[POPUP] Calling _result() with data.url=', w.data.url, 'wrapper.url=', w.url);
             this._result(w.data, w.url, w.timestamp);
         });
     }
